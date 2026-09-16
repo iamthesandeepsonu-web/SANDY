@@ -40,16 +40,31 @@ export const keyboards = {
     return kb;
   },
 
-  purchaseConfirm(serviceId: string, validityId: string, priceInr: number, priceUsd: number, userBalance: number): InlineKeyboard {
+  // Payment Options after live stock confirmation:
+  // - Pay with INR Balance
+  // - Pay with Binance / USDT Balance
+  shopPaymentOptions(serviceId: string, validityId: string, priceInr: number, priceUsd: number, userBalance: number): InlineKeyboard {
     const kb = new InlineKeyboard();
     if (userBalance >= priceInr) {
-      kb.text(`✅ Confirm Purchase (Pay ₹${priceInr.toFixed(2)})`, `buy_confirm_${serviceId}_${validityId}`).row();
+      kb.text(`🇮🇳 Pay with INR Balance (₹${priceInr.toFixed(2)})`, `pay_inr_${serviceId}_${validityId}`).row();
     } else {
       const needed = priceInr - userBalance;
-      kb.text(`💳 Top Up Wallet (+₹${needed.toFixed(0)})`, `wallet_topup_amount_${Math.ceil(needed)}`).row();
+      kb.text(`🇮🇳 Top Up & Pay INR (+₹${Math.ceil(needed)})`, `pay_inr_topup_${serviceId}_${validityId}_${Math.ceil(needed)}`).row();
     }
+    kb.text(`💎 Pay with Binance / USDT ($${priceUsd.toFixed(2)})`, `pay_binance_${serviceId}_${validityId}`).row();
     kb.text('← Back to Validities', `shop_srv_${serviceId}`);
     return kb;
+  },
+
+  purchaseConfirm(serviceId: string, validityId: string, priceInr: number, priceUsd: number, userBalance: number): InlineKeyboard {
+    return this.shopPaymentOptions(serviceId, validityId, priceInr, priceUsd, userBalance);
+  },
+
+  backToValidities(serviceId: string): InlineKeyboard {
+    return new InlineKeyboard()
+      .text('← Back to Validities', `shop_srv_${serviceId}`)
+      .row()
+      .text('🛒 All Products', 'menu_shop');
   },
 
   walletPresets(): InlineKeyboard {

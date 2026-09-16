@@ -197,6 +197,75 @@ export const licenseApiService = {
     }
   },
 
+  async checkStock(externalProductId: string): Promise<{
+    success: boolean;
+    in_stock: boolean;
+    stock_count?: number;
+    error_code?: 'OUT_OF_STOCK' | 'SERVER_ERROR' | 'INVALID_TOKEN' | 'PRODUCT_NOT_FOUND' | 'API_ERROR';
+    error_message?: string;
+  }> {
+    const endpoint = this.getEndpoint();
+    const token = this.getToken();
+
+    if (!token) {
+      return {
+        success: false,
+        in_stock: false,
+        error_code: 'INVALID_TOKEN',
+        error_message: 'License Provider API token is not configured.'
+      };
+    }
+
+    try {
+      const catalogResult = await this.getProducts();
+      if (!catalogResult.success) {
+        return {
+          success: false,
+          in_stock: false,
+          error_code: 'SERVER_ERROR',
+          error_message: catalogResult.message || 'Unable to connect to Service Provider. Please try again later.'
+        };
+      }
+
+      const match = catalogResult.products.find(
+        p => String(p.id).toLowerCase() === String(externalProductId).toLowerCase()
+      );
+
+      if (!match) {
+        return {
+          success: false,
+          in_stock: false,
+          error_code: 'PRODUCT_NOT_FOUND',
+          error_message: `Product ID "${externalProductId}" not found in Provider catalog.`
+        };
+      }
+
+      if (!match.in_stock || (match.stock_count !== undefined && match.stock_count <= 0)) {
+        return {
+          success: true,
+          in_stock: false,
+          stock_count: 0,
+          error_code: 'OUT_OF_STOCK',
+          error_message: 'External provider is currently out of stock.'
+        };
+      }
+
+      return {
+        success: true,
+        in_stock: true,
+        stock_count: match.stock_count
+      };
+    } catch (err: any) {
+      const errMsg = err.response?.data?.message || err.response?.data?.error || err.message || 'Service Provider is not responding or timed out.';
+      return {
+        success: false,
+        in_stock: false,
+        error_code: 'SERVER_ERROR',
+        error_message: errMsg
+      };
+    }
+  },
+
   async orderProduct(externalProductId: string, clientOrderId: string): Promise<LdOrderResult> {
     const endpoint = this.getEndpoint();
     const token = this.getToken();

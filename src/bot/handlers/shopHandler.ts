@@ -1,10 +1,16 @@
-import { Context } from 'grammy';
+import { Context, InputFile } from 'grammy';
 import { serviceRepo } from '../../database/repositories/serviceRepo.js';
 import { validityRepo } from '../../database/repositories/validityRepo.js';
 import { userRepo } from '../../database/repositories/userRepo.js';
 import { settingsRepo } from '../../database/repositories/settingsRepo.js';
+import { mappingRepo } from '../../database/repositories/mappingRepo.js';
+import { licenseRepo } from '../../database/repositories/licenseRepo.js';
+import { licenseApiService } from '../../services/licenseApiService.js';
 import { fulfillmentService } from '../../services/fulfillmentService.js';
+import { binancePayService } from '../../services/binancePayService.js';
+import { paymentRepo } from '../../database/repositories/paymentRepo.js';
 import { keyboards } from '../keyboards.js';
+import crypto from 'crypto';
 
 export async function handleShopMenu(ctx: Context) {
   const services = serviceRepo.getAll(true); // Only active, enabled services
@@ -89,6 +95,11 @@ Select Validity:
   await ctx.answerCallbackQuery();
 }
 
+/**
+ * Step 4 & 5: When user selects a validity:
+ * 1. DO NOT immediately open payment.
+ * 2. Perform LIVE stock/availability check with the mapped API / Service Provider.
+ */
 export async function handleValiditySelect(ctx: Context, serviceId: string, validityId: string) {
   const from = ctx.from;
   if (!from) return;
@@ -104,67 +115,183 @@ export async function handleValiditySelect(ctx: Context, serviceId: string, vali
 
   const priceUsd = settingsRepo.calculateUsd(validity.price);
 
-  const balanceStatus = user.balance >= validity.price
-    ? `✅ <i>Sufficient balance (₹${user.balance.toFixed(2)})</i>`
-    : `⚠️ <i>Insufficient balance. Need ₹${(validity.price - user.balance).toFixed(2)} more.</i>`;
+  // Inform user that live verification is happening
+  await ctx.answerCallbackQuery({ text: '🔍 Checking live provider stock...' });
+
+  // LIVE STOCK/AVAILABILITY CHECK WITH MAPPED SERVICE PROVIDER / API
+  const mapping = mappingRepo.getByServiceAndValidity(serviceId, validityId);
+
+  if (mapping && mapping.external_product_id) {
+    // Mapped product: Query live Service Provider API
+    const stockCheck = await licenseApiService.checkStock(mapping.external_product_id);
+
+    // CASE 1: Stock is NOT AVAILABLE
+    if (stockCheck.success && stockCheck.in_stock === false) {
+      const text = `
+⚠️ <b>OUT OF STOCK</b>
+
+🎮 <b>Product:</b> ${escapeHtml(service.name)}
+⏳ <b>Validity:</b> ${escapeHtml(validity.name)}
+
+This product is currently <b>Out of Stock</b> with the Service Provider.
+
+<i>• No balance or credits were deducted.
+• Please check back shortly or choose another option.</i>
+`.trim();
+      await ctx.editMessageText(text, {
+        parse_mode: 'HTML',
+        reply_markup: keyboards.backToValidities(serviceId)
+      });
+      return;
+    }
+
+    // CASE 2: Service Provider returned an error
+    if (!stockCheck.success && stockCheck.error_code !== 'SERVER_ERROR') {
+      const text = `
+❌ <b>SERVICE PROVIDER RESPONSE</b>
+
+🎮 <b>Product:</b> ${escapeHtml(service.name)} (${escapeHtml(validity.name)})
+
+<b>Provider Message:</b>
+<code>${escapeHtml(stockCheck.error_message || 'Service Provider returned an error')}</code>
+
+<i>• No backup stock was used.
+• No balance or credits were deducted.</i>
+`.trim();
+      await ctx.editMessageText(text, {
+        parse_mode: 'HTML',
+        reply_markup: keyboards.backToValidities(serviceId)
+      });
+      return;
+    }
+
+    // CASE 3: Service Provider is not responding, times out, or server is unavailable
+    if (!stockCheck.success) {
+      const text = `
+⚠️ <b>SERVICE PROVIDER UNAVAILABLE</b>
+
+🎮 <b>Product:</b> ${escapeHtml(service.name)} (${escapeHtml(validity.name)})
+
+The Service Provider server is currently not responding or timed out.
+
+<b>Details:</b>
+<code>${escapeHtml(stockCheck.error_message || 'Connection timed out. Server is unavailable.')}</code>
+
+<i>• No backup stock was consumed.
+• No balance or credits were deducted.</i>
+`.trim();
+      await ctx.editMessageText(text, {
+        parse_mode: 'HTML',
+        reply_markup: keyboards.backToValidities(serviceId)
+      });
+      return;
+    }
+  } else {
+    // Tier 1: Local Stock Only
+    const localStock = licenseRepo.getAvailableCount(serviceId, validityId);
+    if (localStock <= 0) {
+      const text = `
+⚠️ <b>OUT OF STOCK</b>
+
+🎮 <b>Product:</b> ${escapeHtml(service.name)}
+⏳ <b>Validity:</b> ${escapeHtml(validity.name)}
+
+Sorry, this product is currently <b>Out of Stock</b> in our local inventory.
+
+<i>• No balance or credits were deducted.
+• Please check back later.</i>
+`.trim();
+      await ctx.editMessageText(text, {
+        parse_mode: 'HTML',
+        reply_markup: keyboards.backToValidities(serviceId)
+      });
+      return;
+    }
+  }
+
+  // STOCK CONFIRMED AVAILABLE -> SHOW PAYMENT OPTIONS
+  const balanceInfo = user.balance >= validity.price
+    ? `✅ <b>INR Balance:</b> ₹${user.balance.toFixed(2)} (Sufficient)`
+    : `⚠️ <b>INR Balance:</b> ₹${user.balance.toFixed(2)} (Need ₹${(validity.price - user.balance).toFixed(2)} more)`;
 
   const text = `
-📦 <b>Product Checkout Summary</b>
+✅ <b>LIVE STOCK CONFIRMED AVAILABLE</b>
 
-🔹 <b>Product:</b> ${escapeHtml(service.name)}
-🔹 <b>Validity:</b> ${escapeHtml(validity.name)}
-💰 <b>Price:</b> ₹${validity.price.toFixed(2)} ($${priceUsd.toFixed(2)})
+🎮 <b>Product:</b> ${escapeHtml(service.name)}
+⏳ <b>Plan:</b> ${escapeHtml(validity.name)}
+💵 <b>Price (INR):</b> ₹${validity.price.toFixed(2)}
+💵 <b>Price (USD):</b> $${priceUsd.toFixed(2)}
 
-👤 <b>Your Balance:</b> ₹${user.balance.toFixed(2)}
-${balanceStatus}
+👤 <b>Your Account:</b>
+${balanceInfo}
+
+👇 <b>SELECT PAYMENT METHOD:</b>
 `.trim();
 
-  const kb = keyboards.purchaseConfirm(serviceId, validityId, validity.price, priceUsd, user.balance);
+  const kb = keyboards.shopPaymentOptions(serviceId, validityId, validity.price, priceUsd, user.balance);
   await ctx.editMessageText(text, { parse_mode: 'HTML', reply_markup: kb });
-  await ctx.answerCallbackQuery();
 }
 
-export async function handlePurchaseConfirm(ctx: Context, serviceId: string, validityId: string) {
+/**
+ * Handle Purchase with INR Balance
+ */
+export async function handlePurchaseInr(ctx: Context, serviceId: string, validityId: string) {
   const from = ctx.from;
   if (!from) return;
 
   const user = userRepo.upsertFromTelegram(from.id, from.username, from.first_name);
+  const service = serviceRepo.getById(serviceId);
+  const validity = validityRepo.getById(validityId);
 
-  // Notify user that request is processing
-  await ctx.answerCallbackQuery({ text: 'Processing your order securely...' });
+  if (!service || !validity) {
+    await ctx.answerCallbackQuery({ text: 'Invalid product selected.', show_alert: true });
+    return handleShopMenu(ctx);
+  }
+
+  // Balance Check
+  if (user.balance < validity.price) {
+    const diff = validity.price - user.balance;
+    await ctx.answerCallbackQuery({ text: `Insufficient balance! Need ₹${diff.toFixed(2)} more.`, show_alert: true });
+    
+    const text = `
+❌ <b>Insufficient Wallet Balance</b>
+
+🎮 <b>Product:</b> ${escapeHtml(service.name)} (${escapeHtml(validity.name)})
+💰 <b>Price:</b> ₹${validity.price.toFixed(2)}
+💳 <b>Your Balance:</b> ₹${user.balance.toFixed(2)}
+⚠️ <b>Shortage:</b> ₹${diff.toFixed(2)}
+
+Please top up your wallet using UPI Auto QR or Binance Pay below:
+`.trim();
+
+    await ctx.editMessageText(text, {
+      parse_mode: 'HTML',
+      reply_markup: keyboards.paymentMethods(Math.ceil(diff))
+    });
+    return;
+  }
+
+  await ctx.answerCallbackQuery({ text: '⚡ Processing your order securely...' });
 
   const result = await fulfillmentService.processPurchase(user.id, serviceId, validityId);
 
   if (!result.success) {
-    if (result.errorCode === 'INSUFFICIENT_BALANCE') {
-      const validity = validityRepo.getById(validityId);
-      const price = validity ? validity.price : 0;
-      await ctx.editMessageText(
-        `❌ <b>Insufficient Balance</b>\n\nYour current wallet balance is <b>₹${user.balance.toFixed(2)}</b>, but this product costs <b>₹${price.toFixed(2)}</b>.\n\nPlease top up your wallet to continue.`,
-        {
-          parse_mode: 'HTML',
-          reply_markup: keyboards.paymentMethods(price)
-        }
-      );
-      return;
-    }
-
     if (result.errorCode === 'OUT_OF_STOCK') {
       await ctx.editMessageText(
-        '⚠️ <b>Out of Stock</b>\n\nSorry, this product is currently out of stock. Please check back later or choose another option.',
+        `⚠️ <b>Out of Stock</b>\n\n${escapeHtml(result.errorMessage || 'Product became out of stock during fulfillment.')}\n\n<i>Your wallet balance was NOT deducted.</i>`,
         {
           parse_mode: 'HTML',
-          reply_markup: keyboards.servicesList(serviceRepo.getAll(true))
+          reply_markup: keyboards.backToValidities(serviceId)
         }
       );
       return;
     }
 
     await ctx.editMessageText(
-      `⚠️ <b>Notice</b>\n\n${escapeHtml(result.errorMessage || 'Server not responding. Please try again.')}`,
+      `❌ <b>Purchase Failed</b>\n\n<b>Provider Response:</b>\n<code>${escapeHtml(result.errorMessage || 'Provider failed to generate license')}</code>\n\n<i>No balance was deducted. Backup stock was protected.</i>`,
       {
         parse_mode: 'HTML',
-        reply_markup: keyboards.backToMain()
+        reply_markup: keyboards.backToValidities(serviceId)
       }
     );
     return;
@@ -178,17 +305,15 @@ export async function handlePurchaseConfirm(ctx: Context, serviceId: string, val
 🎉 <b>Order Successful!</b>
 
 📦 <b>Order ID:</b> <code>${order.id}</code>
-🎮 <b>Product:</b> ${escapeHtml(order.service_name)}
-⏱️ <b>Validity:</b> ${escapeHtml(order.validity_name)}
-💰 <b>Amount Paid:</b> ₹${order.price_paid.toFixed(2)}
-📅 <b>Date:</b> ${new Date(order.created_at).toLocaleString()}
+🎮 <b>Product:</b> ${escapeHtml(service.name)}
+⏳ <b>Validity:</b> ${escapeHtml(validity.name)}
+💰 <b>Amount Paid:</b> ₹${order.price_inr.toFixed(2)} ($${order.price_usd.toFixed(2)})
+💳 <b>Remaining Balance:</b> ₹${(user.balance - order.price_inr).toFixed(2)}
 
-🔑 <b>Your License Key / Digital Code:</b>
+🔑 <b>Your License Key:</b>
 <code>${escapeHtml(licenseKey)}</code>
 
-<i>(Tap the key above to copy it instantly)</i>
-
-Thank you for your purchase! You can view your keys anytime under <b>📦 My Orders</b>.
+<i>💡 Tap on the license key above to copy it instantly. Save this message for your reference.</i>
 `.trim();
 
   await ctx.editMessageText(text, {
@@ -197,8 +322,80 @@ Thank you for your purchase! You can view your keys anytime under <b>📦 My Ord
   });
 }
 
-function escapeHtml(str: string): string {
-  return str
+/**
+ * Handle Purchase with Binance Pay / USDT
+ */
+export async function handlePurchaseBinance(ctx: Context, serviceId: string, validityId: string) {
+  const from = ctx.from;
+  if (!from) return;
+
+  const user = userRepo.upsertFromTelegram(from.id, from.username, from.first_name);
+  const service = serviceRepo.getById(serviceId);
+  const validity = validityRepo.getById(validityId);
+
+  if (!service || !validity) {
+    await ctx.answerCallbackQuery({ text: 'Invalid product selected.', show_alert: true });
+    return handleShopMenu(ctx);
+  }
+
+  const priceUsd = settingsRepo.calculateUsd(validity.price);
+  const refId = 'BIN' + Date.now().toString(36).toUpperCase() + crypto.randomBytes(2).toString('hex').toUpperCase();
+
+  const binanceData = await binancePayService.generateOrderPayload(validity.price, priceUsd, refId);
+
+  const payment = paymentRepo.create({
+    user_id: user.id,
+    gateway: 'BINANCE_PAY',
+    amount: validity.price,
+    amount_usd: priceUsd,
+    reference_id: refId,
+    gateway_payload: JSON.stringify({ ...binanceData, serviceId, validityId }),
+    status: 'PENDING'
+  });
+
+  const text = `
+💎 <b>Binance Pay / USDT Checkout</b>
+
+🎮 <b>Product:</b> ${escapeHtml(service.name)} (${escapeHtml(validity.name)})
+💵 <b>Amount to Pay:</b> <b>$${priceUsd.toFixed(2)} USDT</b>
+💵 <b>Equivalent INR:</b> ₹${validity.price.toFixed(2)}
+🆔 <b>Payment Ref:</b> <code>${payment.id}</code>
+
+━━━━━━━━━━━━━━━━━━━━
+📌 <b>Payment Instructions:</b>
+
+1️⃣ <b>Binance Pay ID / Merchant:</b>
+<code>${binanceData.merchantId || 'Contact Support'}</code>
+
+2️⃣ <b>BEP-20 USDT Address:</b>
+<code>${binanceData.bep20Address || 'Contact Admin'}</code>
+
+3️⃣ Send exactly <b>$${priceUsd.toFixed(2)} USDT</b>.
+4️⃣ After transferring, click <b>Check Payment Status</b> below.
+━━━━━━━━━━━━━━━━━━━━
+`.trim();
+
+  const kb = keyboards.paymentPendingActions(payment.id);
+
+  if (binanceData.qrBase64) {
+    const buffer = Buffer.from(binanceData.qrBase64.replace(/^data:image\/\w+;base64,/, ''), 'base64');
+    await ctx.replyWithPhoto(new InputFile(buffer, 'binance_qr.png'), {
+      caption: text,
+      parse_mode: 'HTML',
+      reply_markup: kb
+    });
+  } else {
+    await ctx.editMessageText(text, {
+      parse_mode: 'HTML',
+      reply_markup: kb
+    });
+  }
+  await ctx.answerCallbackQuery();
+}
+
+export function escapeHtml(str: string): string {
+  if (!str) return '';
+  return String(str)
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;');

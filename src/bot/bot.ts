@@ -7,7 +7,8 @@ import {
   handleShopMenu,
   handleServiceSelect,
   handleValiditySelect,
-  handlePurchaseConfirm
+  handlePurchaseInr,
+  handlePurchaseBinance
 } from './handlers/shopHandler.js';
 import { handleMyOrders } from './handlers/ordersHandler.js';
 import { handleProfile } from './handlers/profileHandler.js';
@@ -139,11 +140,29 @@ export function createTelegramBot(): Bot | null {
       const validityId = parts.slice(1).join('_');
       return handleValiditySelect(ctx, serviceId, validityId);
     }
+    if (data.startsWith('pay_inr_topup_')) {
+      const parts = data.replace('pay_inr_topup_', '').split('_');
+      // Format: pay_inr_topup_{serviceId}_{validityId}_{amount}
+      const amount = parseFloat(parts[2] || '100');
+      return handleSelectPaymentMethod(ctx, amount);
+    }
+    if (data.startsWith('pay_inr_')) {
+      const parts = data.replace('pay_inr_', '').split('_');
+      const serviceId = parts[0];
+      const validityId = parts.slice(1).join('_');
+      return handlePurchaseInr(ctx, serviceId, validityId);
+    }
+    if (data.startsWith('pay_binance_')) {
+      const parts = data.replace('pay_binance_', '').split('_');
+      const serviceId = parts[0];
+      const validityId = parts.slice(1).join('_');
+      return handlePurchaseBinance(ctx, serviceId, validityId);
+    }
     if (data.startsWith('buy_confirm_')) {
       const parts = data.replace('buy_confirm_', '').split('_');
       const serviceId = parts[0];
       const validityId = parts.slice(1).join('_');
-      return handlePurchaseConfirm(ctx, serviceId, validityId);
+      return handlePurchaseInr(ctx, serviceId, validityId);
     }
 
     // Wallet & Payments Flow
