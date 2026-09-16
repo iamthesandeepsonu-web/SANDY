@@ -192,8 +192,8 @@ export function initDatabase() {
     { key: 'upi_merchant_name', value: config.brand.storeName },
     { key: 'upi_webhook_secret', value: 'upi_secret_key_123' },
     { key: 'upi_is_configured', value: 'true' },
-    { key: 'ld_api_endpoint', value: 'http://localhost:3000/api/mock-ld' },
-    { key: 'ld_api_token', value: 'mock_ld_token_production_access' },
+    { key: 'ld_api_endpoint', value: 'https://licencedashboard.shop/api/v1' },
+    { key: 'ld_api_token', value: 'ldk_ea19008d65d71e216ce765e6801d0d7684db7a8db385354e' },
     { key: 'ld_api_is_configured', value: 'true' }
   ];
 
