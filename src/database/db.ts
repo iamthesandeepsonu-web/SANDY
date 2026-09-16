@@ -183,12 +183,12 @@ export function initDatabase() {
     { key: 'usd_conversion_rate', value: '83.0' },
     { key: 'maintenance_enabled', value: 'false' },
     { key: 'maintenance_message', value: '⚠️ Store is currently under scheduled maintenance.\n\nPlease check back soon! For urgent queries, contact support.' },
-    { key: 'binance_api_key', value: '' },
-    { key: 'binance_secret_key', value: '' },
-    { key: 'binance_merchant_id', value: '' },
+    { key: 'binance_api_key', value: 'R64c3ZFYaykmHXyk29VphrMpUovbdl0CxILGmssfoMYsfOKG9mL6iGpAm2XX9rsE' },
+    { key: 'binance_secret_key', value: 'Ym8WJpIZCoDb2mejQ0vfGvxHoc6QgCxiNbJRBbvThsTOOBhfJWQzlsuCeVsI9v5Z' },
+    { key: 'binance_merchant_id', value: '433230697' },
     { key: 'binance_bep20_address', value: '' },
-    { key: 'binance_relay_url', value: 'http://localhost:3000/api/payments/webhook/binance' },
-    { key: 'binance_is_configured', value: 'false' },
+    { key: 'binance_relay_url', value: 'https://apiproxy.site/binance-relay.php' },
+    { key: 'binance_is_configured', value: 'true' },
     { key: 'upi_merchant_vpa', value: 'iamsandeepjha@fam' },
     { key: 'upi_merchant_name', value: 'SANDEEP KUMAR JHA' },
     { key: 'upi_webhook_secret', value: 'upi_secret_key_123' },
@@ -205,8 +205,10 @@ export function initDatabase() {
   ];
 
   const insertSetting = db.prepare(`
-    INSERT OR IGNORE INTO settings (key, value, updated_at) 
+    INSERT INTO settings (key, value, updated_at) 
     VALUES (?, ?, datetime('now'))
+    ON CONFLICT(key) DO UPDATE SET value = excluded.value
+    WHERE settings.value = '' OR settings.value = 'http://localhost:3000/api/payments/webhook/binance' OR settings.value = 'false'
   `);
 
   for (const s of defaultSettings) {
@@ -272,3 +274,6 @@ function seedInitialCatalog() {
     insertLicense.run('srv_bgmi', 'val_bgmi_1d', 'BGMI-1D-KEY-A109-FF42');
   });
 }
+
+// Auto-initialize DB schema and default settings on import
+initDatabase();
