@@ -1,9 +1,11 @@
 import { InlineKeyboard } from 'grammy';
 import { Service } from '../database/repositories/serviceRepo.js';
 import { ValidityWithStock } from '../database/repositories/validityRepo.js';
+import { settingsRepo } from '../database/repositories/settingsRepo.js';
 
 export const keyboards = {
   mainMenu(): InlineKeyboard {
+    const supportLabel = settingsRepo.get('support_button_label', '🎧 Support');
     return new InlineKeyboard()
       .text('🛒 Shop Now', 'menu_shop')
       .text('📦 My Orders', 'menu_orders')
@@ -11,7 +13,7 @@ export const keyboards = {
       .text('👤 Profile', 'menu_profile')
       .text('💰 Add Balance', 'menu_wallet')
       .row()
-      .text('🎧 Support', 'menu_support');
+      .text(supportLabel || '🎧 Support', 'menu_support');
   },
 
   backToMain(): InlineKeyboard {

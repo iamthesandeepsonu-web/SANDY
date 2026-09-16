@@ -86,6 +86,10 @@
           <i class="fa-solid fa-screwdriver-wrench"></i>
           <span>Maintenance Mode</span>
         </a>
+        <a href="#support" class="nav-item" data-view="support">
+          <i class="fa-solid fa-headset"></i>
+          <span>Support & Settings</span>
+        </a>
       </nav>
 
       <div class="sidebar-footer">
@@ -676,7 +680,124 @@
           </div>
         </section>
 
-      </div>
+        <!-- 9. SUPPORT & STORE SETTINGS VIEW -->
+        <section id="view-support" class="view-panel">
+          <div class="action-bar">
+            <div class="action-left">
+              <h2>Support & Store Settings</h2>
+              <p>Manage customer contact buttons, official support username, channels, and store branding</p>
+            </div>
+          </div>
+
+          <div class="split-grid-2">
+            <!-- 1. Contact Support Configuration -->
+            <div class="glass-card">
+              <div class="panel-header">
+                <h3><i class="fa-solid fa-headset text-primary"></i> Telegram Support Settings</h3>
+              </div>
+              <form id="support-settings-form">
+                <div class="form-group">
+                  <label for="support-username-input"><i class="fa-brands fa-telegram text-info"></i> Support Telegram Username</label>
+                  <div class="input-prefix-group">
+                    <span class="input-prefix">@</span>
+                    <input type="text" id="support-username-input" class="form-control" placeholder="e.g. YourSupportHandle" required>
+                  </div>
+                  <small class="form-hint">Your official Telegram username where customers will be directed.</small>
+                </div>
+
+                <div class="form-group">
+                  <label for="support-link-input"><i class="fa-solid fa-link"></i> Custom Support URL (Optional Override)</label>
+                  <input type="url" id="support-link-input" class="form-control" placeholder="https://t.me/YourSupportHandle or https://wa.me/...">
+                  <small class="form-hint">Leave empty to use standard Telegram username link automatically.</small>
+                </div>
+
+                <div class="form-grid-2">
+                  <div class="form-group">
+                    <label for="support-btn-text-input"><i class="fa-solid fa-comment-dots"></i> Chat Button Text</label>
+                    <input type="text" id="support-btn-text-input" class="form-control" placeholder="💬 Chat with Support Agent">
+                    <small class="form-hint">Text shown on the contact button in the support menu.</small>
+                  </div>
+
+                  <div class="form-group">
+                    <label for="support-button-label-input"><i class="fa-solid fa-bars"></i> Main Menu Button Label</label>
+                    <input type="text" id="support-button-label-input" class="form-control" placeholder="🎧 Support">
+                    <small class="form-hint">Text shown on the main menu button in Telegram.</small>
+                  </div>
+                </div>
+
+                <div class="form-grid-2">
+                  <div class="form-group">
+                    <label for="support-channel-url-input"><i class="fa-solid fa-bullhorn text-warning"></i> Official Channel Link (Optional)</label>
+                    <input type="url" id="support-channel-url-input" class="form-control" placeholder="https://t.me/YourChannel">
+                  </div>
+
+                  <div class="form-group">
+                    <label for="support-channel-label-input"><i class="fa-solid fa-tag"></i> Channel Button Text</label>
+                    <input type="text" id="support-channel-label-input" class="form-control" placeholder="📢 Official Updates Channel">
+                  </div>
+                </div>
+
+                <div class="form-group">
+                  <label for="support-message-input"><i class="fa-solid fa-message"></i> Custom Support Section Message</label>
+                  <textarea id="support-message-input" class="form-control font-mono" rows="6" placeholder="Leave empty for default 24/7 support message or enter custom HTML text..."></textarea>
+                  <small class="form-hint">Supports HTML formatting tags (<code>&lt;b&gt;</code>, <code>&lt;i&gt;</code>, <code>&lt;code&gt;</code>) and emojis.</small>
+                </div>
+
+                <hr class="card-divider">
+
+                <div class="panel-header" style="margin-top: 15px; margin-bottom: 15px;">
+                  <h3><i class="fa-solid fa-store text-success"></i> General Store Branding</h3>
+                </div>
+
+                <div class="form-grid-2">
+                  <div class="form-group">
+                    <label for="brand-name-input"><i class="fa-solid fa-shop"></i> Store Brand Name</label>
+                    <input type="text" id="brand-name-input" class="form-control" placeholder="ALPHA DIGITAL STORE">
+                  </div>
+
+                  <div class="form-group">
+                    <label for="usd-rate-general-input"><i class="fa-solid fa-dollar-sign"></i> USD Conversion Rate (1 USD in INR)</label>
+                    <input type="number" step="0.01" id="usd-rate-general-input" class="form-control" placeholder="83.00">
+                  </div>
+                </div>
+
+                <div class="card-action-bar" style="margin-top: 20px;">
+                  <button type="submit" class="btn btn-primary">
+                    <i class="fa-solid fa-floppy-disk"></i>
+                    <span>Save Support & Store Settings</span>
+                  </button>
+                </div>
+              </form>
+            </div>
+
+            <!-- 2. Live Preview Card -->
+            <div class="glass-card">
+              <div class="panel-header">
+                <h3><i class="fa-brands fa-telegram text-info"></i> Telegram Support Preview</h3>
+              </div>
+              <div class="telegram-preview-box">
+                <div class="telegram-msg-bubble">
+                  <div class="telegram-msg-header">
+                    <span class="bot-avatar"><i class="fa-solid fa-robot"></i></span>
+                    <strong id="preview-brand-title">ALPHA STORE BOT</strong>
+                  </div>
+                  <div class="telegram-msg-content" id="support-preview-text">
+                    🎧 <b>24/7 Customer Support</b><br><br>
+                    Need help with an order, balance top-up, or license key issue?<br>
+                    Our dedicated support team is available around the clock to assist you!<br><br>
+                    💬 <b>Official Support:</b> @<span id="preview-username-val">AlphaSupport</span><br>
+                    ⏰ <b>Response Time:</b> Usually within minutes
+                  </div>
+                  <div class="telegram-inline-keyboard">
+                    <button type="button" class="tg-btn" id="preview-chat-btn"><i class="fa-solid fa-arrow-up-right-from-square"></i> <span id="preview-btn-label">💬 Chat with Support Agent</span></button>
+                    <button type="button" class="tg-btn hidden" id="preview-channel-btn"><i class="fa-solid fa-bullhorn"></i> <span id="preview-channel-label">📢 Official Updates Channel</span></button>
+                    <button type="button" class="tg-btn">← Back to Main Menu</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
     </main>
   </div>
 

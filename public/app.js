@@ -203,6 +203,9 @@ function loadViewData(viewName) {
     case 'maintenance':
       loadMaintenanceData();
       break;
+    case 'support':
+      loadSupportData();
+      break;
   }
 }
 
@@ -754,6 +757,72 @@ async function loadMaintenanceData() {
   }
 }
 
+// 9. SUPPORT & STORE SETTINGS VIEW
+async function loadSupportData() {
+  try {
+    const res = await api('/settings/general');
+    if (!res || !res.success || !res.settings) return;
+    const s = res.settings;
+
+    const setVal = (id, val) => {
+      const el = document.getElementById(id);
+      if (el) el.value = val !== undefined && val !== null ? val : '';
+    };
+
+    setVal('support-username-input', s.supportUsername || '');
+    setVal('support-link-input', s.supportLink || '');
+    setVal('support-btn-text-input', s.supportBtnText || '💬 Chat with Support Agent');
+    setVal('support-button-label-input', s.supportButtonLabel || '🎧 Support');
+    setVal('support-channel-url-input', s.supportChannelUrl || '');
+    setVal('support-channel-label-input', s.supportChannelLabel || '📢 Official Updates Channel');
+    setVal('support-message-input', s.supportMessage || '');
+    setVal('brand-name-input', s.brandName || 'ALPHA DIGITAL STORE');
+    setVal('usd-rate-general-input', s.usdRate || 83.0);
+
+    updateSupportPreview();
+  } catch (err) {
+    showToast('Failed to load support settings', 'error');
+  }
+}
+
+function updateSupportPreview() {
+  const username = document.getElementById('support-username-input')?.value.trim().replace(/^@/, '') || 'AlphaSupport';
+  const btnText = document.getElementById('support-btn-text-input')?.value.trim() || '💬 Chat with Support Agent';
+  const channelUrl = document.getElementById('support-channel-url-input')?.value.trim();
+  const channelLabel = document.getElementById('support-channel-label-input')?.value.trim() || '📢 Official Updates Channel';
+  const customMessage = document.getElementById('support-message-input')?.value.trim();
+  const brand = document.getElementById('brand-name-input')?.value.trim() || 'ALPHA STORE BOT';
+
+  const previewBrand = document.getElementById('preview-brand-title');
+  if (previewBrand) previewBrand.textContent = brand;
+
+  const previewUser = document.getElementById('preview-username-val');
+  if (previewUser) previewUser.textContent = username;
+
+  const previewBtn = document.getElementById('preview-btn-label');
+  if (previewBtn) previewBtn.textContent = btnText;
+
+  const channelBtn = document.getElementById('preview-channel-btn');
+  const channelBtnLabel = document.getElementById('preview-channel-label');
+  if (channelBtn) {
+    if (channelUrl) {
+      channelBtn.classList.remove('hidden');
+      if (channelBtnLabel) channelBtnLabel.textContent = channelLabel;
+    } else {
+      channelBtn.classList.add('hidden');
+    }
+  }
+
+  const contentEl = document.getElementById('support-preview-text');
+  if (contentEl) {
+    if (customMessage) {
+      contentEl.innerHTML = customMessage.replace(/\n/g, '<br>');
+    } else {
+      contentEl.innerHTML = `🎧 <b>24/7 Customer Support</b><br><br>Need help with an order, balance top-up, or license key issue?<br>Our dedicated support team is available around the clock to assist you!<br><br>💬 <b>Official Support:</b> @<span id="preview-username-val">${username}</span><br>⏰ <b>Response Time:</b> Usually within minutes`;
+    }
+  }
+}
+
 // Event Listeners Setup
 function setupEventListeners() {
   // Login Form
@@ -1169,6 +1238,65 @@ function setupEventListeners() {
     } catch (err) {
       showToast(err.message, 'error');
     }
+  });
+
+  // Support Settings Form & Live Preview
+  safeOn('support-settings-form', 'submit', async (e) => {
+    e.preventDefault();
+    const supportUsername = document.getElementById('support-username-input')?.value.trim();
+    const supportLink = document.getElementById('support-link-input')?.value.trim();
+    const supportBtnText = document.getElementById('support-btn-text-input')?.value.trim();
+    const supportButtonLabel = document.getElementById('support-button-label-input')?.value.trim();
+    const supportChannelUrl = document.getElementById('support-channel-url-input')?.value.trim();
+    const supportChannelLabel = document.getElementById('support-channel-label-input')?.value.trim();
+    const supportMessage = document.getElementById('support-message-input')?.value;
+    const brandName = document.getElementById('brand-name-input')?.value.trim();
+    const usdRate = parseFloat(document.getElementById('usd-rate-general-input')?.value);
+
+    try {
+      const res = await api('/settings/general', {
+        method: 'POST',
+        body: JSON.stringify({
+          supportUsername,
+          supportLink,
+          supportBtnText,
+          supportButtonLabel,
+          supportChannelUrl,
+          supportChannelLabel,
+          supportMessage,
+          brandName,
+          usdRate: isNaN(usdRate) ? undefined : usdRate
+        })
+      });
+
+      if (res && res.success) {
+        showToast('Support & Store settings updated successfully!', 'success');
+        if (brandName) {
+          const brandEl = document.getElementById('sidebar-brand-name');
+          if (brandEl) brandEl.textContent = brandName;
+        }
+        updateSupportPreview();
+      } else {
+        showToast(res.message || 'Failed to save support settings', 'error');
+      }
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  });
+
+  // Live preview typing listeners
+  const supportInputs = [
+    'support-username-input',
+    'support-link-input',
+    'support-btn-text-input',
+    'support-button-label-input',
+    'support-channel-url-input',
+    'support-channel-label-input',
+    'support-message-input',
+    'brand-name-input'
+  ];
+  supportInputs.forEach(id => {
+    safeOn(id, 'input', updateSupportPreview);
   });
 
   // Orders and Users filters

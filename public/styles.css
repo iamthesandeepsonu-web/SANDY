@@ -1026,3 +1026,117 @@ input:checked + .switch-slider:before {
 .font-bold { font-weight: 700; }
 .mt-3 { margin-top: 12px; }
 .mt-4 { margin-top: 24px; }
+
+/* Split Grid 2 */
+.split-grid-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+}
+
+@media (max-width: 992px) {
+  .split-grid-2 {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Input with Prefix */
+.input-prefix-group {
+  display: flex;
+  align-items: center;
+  position: relative;
+}
+
+.input-prefix {
+  position: absolute;
+  left: 14px;
+  font-weight: 700;
+  color: var(--primary);
+  font-size: 15px;
+}
+
+.input-prefix-group .form-control {
+  padding-left: 32px;
+}
+
+/* Telegram Preview Box */
+.telegram-preview-box {
+  background: radial-gradient(circle at top right, #1d2b3a 0%, #0d1622 100%);
+  border-radius: var(--radius-lg);
+  padding: 24px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  min-height: 380px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.telegram-msg-bubble {
+  background: #182533;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  padding: 18px 20px;
+  max-width: 420px;
+  width: 100%;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+}
+
+.telegram-msg-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.telegram-msg-header .bot-avatar {
+  width: 28px;
+  height: 28px;
+  background: var(--primary);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  color: #fff;
+}
+
+.telegram-msg-header strong {
+  font-size: 13px;
+  color: #64b5f6;
+}
+
+.telegram-msg-content {
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: #e3e8ee;
+  margin-bottom: 16px;
+}
+
+.telegram-inline-keyboard {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.tg-btn {
+  background: #2b5278;
+  border: none;
+  color: #fff;
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  text-align: center;
+  cursor: default;
+  transition: background 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.tg-btn:hover {
+  background: #366594;
+}
