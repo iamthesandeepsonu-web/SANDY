@@ -1415,6 +1415,88 @@ function setupEventListeners() {
     safeOn(id, 'input', updateSupportPreview);
   });
 
+  // Database Download (.db)
+  safeOn('btn-download-db', 'click', () => {
+    const token = state.token || localStorage.getItem('admin_token');
+    const downloadUrl = `/api/settings/db/download?token=${encodeURIComponent(token || '')}`;
+    window.open(downloadUrl, '_blank');
+    showToast('Starting database download...', 'info');
+  });
+
+  // Database Export (JSON)
+  safeOn('btn-export-backup-json', 'click', async () => {
+    try {
+      showToast('Exporting database backup...', 'info');
+      const res = await api('/settings/db/export');
+      if (res.success && res.data) {
+        const jsonStr = JSON.stringify(res.data, null, 2);
+        const blob = new Blob([jsonStr], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `bot_database_backup_${new Date().toISOString().slice(0, 10)}.json`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        showToast('✅ Database backup exported successfully!', 'success');
+      } else {
+        showToast('Failed to export backup: ' + (res.message || 'Unknown error'), 'error');
+      }
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  });
+
+  // Database Restore (JSON)
+  safeOn('btn-restore-backup', 'click', async () => {
+    const fileInput = document.getElementById('import-backup-file');
+    if (!fileInput || !fileInput.files || fileInput.files.length === 0) {
+      showToast('Please select a JSON backup file to restore.', 'error');
+      return;
+    }
+
+    const file = fileInput.files[0];
+    if (!confirm(`Are you sure you want to restore data from "${file.name}"? This will safely update/merge all products, validities, keys, and users.`)) {
+      return;
+    }
+
+    try {
+      showToast('Reading and importing backup...', 'info');
+      const reader = new FileReader();
+      reader.onload = async (e) => {
+        try {
+          const parsed = JSON.parse(e.target.result);
+          const backupData = parsed.data || parsed;
+
+          const res = await api('/settings/db/import', {
+            method: 'POST',
+            body: JSON.stringify({ data: backupData })
+          });
+
+          if (res.success) {
+            showToast(res.message, 'success');
+            fileInput.value = '';
+            // Reload all dashboard tabs
+            loadOverviewData();
+            loadServicesData();
+            loadLicensesData();
+            loadLdApiData();
+            loadUsersData();
+            loadOrdersData();
+          } else {
+            showToast(res.message || 'Failed to restore backup.', 'error');
+          }
+        } catch (parseErr) {
+          showToast('Invalid JSON file format: ' + parseErr.message, 'error');
+        }
+      };
+      reader.readAsText(file);
+    } catch (err) {
+      showToast('Restore failed: ' + err.message, 'error');
+    }
+  });
+
   // Orders and Users filters
   safeOn('orders-filter-type', 'change', loadOrdersData);
   safeOn('orders-filter-search', 'input', debounce(loadOrdersData, 300));

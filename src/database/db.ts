@@ -205,10 +205,8 @@ export function initDatabase() {
   ];
 
   const insertSetting = db.prepare(`
-    INSERT INTO settings (key, value, updated_at) 
+    INSERT OR IGNORE INTO settings (key, value, updated_at) 
     VALUES (?, ?, datetime('now'))
-    ON CONFLICT(key) DO UPDATE SET value = excluded.value
-    WHERE settings.value = '' OR settings.value = 'merchant@upi' OR settings.value = 'Digital Keys Store'
   `);
 
   for (const s of defaultSettings) {

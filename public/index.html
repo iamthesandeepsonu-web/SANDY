@@ -811,29 +811,64 @@
               </form>
             </div>
 
-            <!-- 2. Live Preview Card -->
-            <div class="glass-card">
-              <div class="panel-header">
-                <h3><i class="fa-brands fa-telegram text-info"></i> Telegram Support Preview</h3>
+            <!-- 2. Live Preview Card & Database Backup Card -->
+            <div class="support-right-column" style="display: flex; flex-direction: column; gap: 20px;">
+              <div class="glass-card">
+                <div class="panel-header">
+                  <h3><i class="fa-brands fa-telegram text-info"></i> Telegram Support Preview</h3>
+                </div>
+                <div class="telegram-preview-box">
+                  <div class="telegram-msg-bubble">
+                    <div class="telegram-msg-header">
+                      <span class="bot-avatar"><i class="fa-solid fa-robot"></i></span>
+                      <strong id="preview-brand-title">ALPHA STORE BOT</strong>
+                    </div>
+                    <div class="telegram-msg-content" id="support-preview-text">
+                      🎧 <b>24/7 Customer Support</b><br><br>
+                      Need help with an order, balance top-up, or license key issue?<br>
+                      Our dedicated support team is available around the clock to assist you!<br><br>
+                      💬 <b>Official Support:</b> @<span id="preview-username-val">AlphaSupport</span><br>
+                      ⏰ <b>Response Time:</b> Usually within minutes
+                    </div>
+                    <div class="telegram-inline-keyboard">
+                      <button type="button" class="tg-btn" id="preview-chat-btn"><i class="fa-solid fa-arrow-up-right-from-square"></i> <span id="preview-btn-label">💬 Chat with Support Agent</span></button>
+                      <button type="button" class="tg-btn hidden" id="preview-channel-btn"><i class="fa-solid fa-bullhorn"></i> <span id="preview-channel-label">📢 Official Updates Channel</span></button>
+                      <button type="button" class="tg-btn">← Back to Main Menu</button>
+                    </div>
+                  </div>
+                </div>
               </div>
-              <div class="telegram-preview-box">
-                <div class="telegram-msg-bubble">
-                  <div class="telegram-msg-header">
-                    <span class="bot-avatar"><i class="fa-solid fa-robot"></i></span>
-                    <strong id="preview-brand-title">ALPHA STORE BOT</strong>
+
+              <!-- 3. Database Backup & Data Preservation Card -->
+              <div class="glass-card">
+                <div class="panel-header">
+                  <h3><i class="fa-solid fa-database text-warning"></i> 💾 Database Backup & Data Preservation</h3>
+                  <span class="badge badge-success">Permanent Storage</span>
+                </div>
+                <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 15px;">
+                  Export or download your entire bot database (Users, Products, Validities, Keys, Settings & Balance). Use this before deploying updates to ensure zero data loss!
+                </p>
+
+                <div style="display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 15px;">
+                  <button type="button" class="btn btn-outline" id="btn-download-db">
+                    <i class="fa-solid fa-file-arrow-down text-primary"></i>
+                    <span>Download SQLite (.db)</span>
+                  </button>
+                  <button type="button" class="btn btn-secondary" id="btn-export-backup-json">
+                    <i class="fa-solid fa-file-code text-success"></i>
+                    <span>Export Backup (JSON)</span>
+                  </button>
+                </div>
+
+                <div class="form-group" style="margin-top: 15px;">
+                  <label for="import-backup-file"><i class="fa-solid fa-file-import text-info"></i> Restore from JSON Backup</label>
+                  <div style="display: flex; gap: 10px;">
+                    <input type="file" id="import-backup-file" accept=".json" class="form-control" style="padding: 6px;">
+                    <button type="button" class="btn btn-primary" id="btn-restore-backup" style="white-space: nowrap;">
+                      <i class="fa-solid fa-rotate-left"></i> Restore Data
+                    </button>
                   </div>
-                  <div class="telegram-msg-content" id="support-preview-text">
-                    🎧 <b>24/7 Customer Support</b><br><br>
-                    Need help with an order, balance top-up, or license key issue?<br>
-                    Our dedicated support team is available around the clock to assist you!<br><br>
-                    💬 <b>Official Support:</b> @<span id="preview-username-val">AlphaSupport</span><br>
-                    ⏰ <b>Response Time:</b> Usually within minutes
-                  </div>
-                  <div class="telegram-inline-keyboard">
-                    <button type="button" class="tg-btn" id="preview-chat-btn"><i class="fa-solid fa-arrow-up-right-from-square"></i> <span id="preview-btn-label">💬 Chat with Support Agent</span></button>
-                    <button type="button" class="tg-btn hidden" id="preview-channel-btn"><i class="fa-solid fa-bullhorn"></i> <span id="preview-channel-label">📢 Official Updates Channel</span></button>
-                    <button type="button" class="tg-btn">← Back to Main Menu</button>
-                  </div>
+                  <small class="form-hint">Select your exported backup <code>.json</code> file to restore all your users, products, and keys instantly.</small>
                 </div>
               </div>
             </div>
