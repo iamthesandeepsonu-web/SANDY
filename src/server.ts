@@ -50,6 +50,7 @@ app.use('/api/settings/payments', paymentSettingsRoutes);
 app.use('/api/settings/ld', ldApiRoutes);
 app.use('/api/settings/maintenance', maintenanceRoutes);
 app.use('/api/settings/general', settingsRoutes);
+app.use('/api/settings', settingsRoutes);
 app.use('/api/stats', statsRoutes);
 app.use('/api/mock-ld', mockLdRoutes);
 
