@@ -40,18 +40,24 @@ export const keyboards = {
     return kb;
   },
 
-  // Payment Options after live stock confirmation:
-  // - Pay with INR Balance
-  // - Pay with Binance / USDT Balance
+  // Payment Gateway Options after live stock confirmation:
+  // - UPI Payment Gateway
+  // - Binance Pay Gateway
+  // - Wallet Balance (if available)
   shopPaymentOptions(serviceId: string, validityId: string, priceInr: number, priceUsd: number, userBalance: number): InlineKeyboard {
     const kb = new InlineKeyboard();
+    
+    // Gateway 1: UPI Auto / QR
+    kb.text(`⚡ Pay with UPI — ₹${priceInr.toFixed(2)}`, `pay_direct_upi_${serviceId}_${validityId}`).row();
+
+    // Gateway 2: Binance Pay / USDT
+    kb.text(`🟡 Pay with Binance Pay — $${priceUsd.toFixed(2)} USDT`, `pay_direct_binance_${serviceId}_${validityId}`).row();
+
+    // Optional: If user has sufficient wallet credits
     if (userBalance >= priceInr) {
-      kb.text(`🇮🇳 Pay with INR Balance (₹${priceInr.toFixed(2)})`, `pay_inr_${serviceId}_${validityId}`).row();
-    } else {
-      const needed = priceInr - userBalance;
-      kb.text(`🇮🇳 Top Up & Pay INR (+₹${Math.ceil(needed)})`, `pay_inr_topup_${serviceId}_${validityId}_${Math.ceil(needed)}`).row();
+      kb.text(`💳 Pay with Wallet Balance (₹${userBalance.toFixed(2)})`, `pay_inr_${serviceId}_${validityId}`).row();
     }
-    kb.text(`💎 Pay with Binance / USDT ($${priceUsd.toFixed(2)})`, `pay_binance_${serviceId}_${validityId}`).row();
+
     kb.text('← Back to Validities', `shop_srv_${serviceId}`);
     return kb;
   },

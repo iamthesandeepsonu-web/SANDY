@@ -8,6 +8,7 @@ import { licenseRepo } from '../../database/repositories/licenseRepo.js';
 import { licenseApiService } from '../../services/licenseApiService.js';
 import { fulfillmentService } from '../../services/fulfillmentService.js';
 import { binancePayService } from '../../services/binancePayService.js';
+import { upiService } from '../../services/upiService.js';
 import { paymentRepo } from '../../database/repositories/paymentRepo.js';
 import { keyboards } from '../keyboards.js';
 import crypto from 'crypto';
@@ -323,9 +324,76 @@ Please top up your wallet using UPI Auto QR or Binance Pay below:
 }
 
 /**
- * Handle Purchase with Binance Pay / USDT
+ * Handle Direct UPI Payment for Selected Product
  */
-export async function handlePurchaseBinance(ctx: Context, serviceId: string, validityId: string) {
+export async function handlePurchaseDirectUpi(ctx: Context, serviceId: string, validityId: string) {
+  const from = ctx.from;
+  if (!from) return;
+
+  const user = userRepo.upsertFromTelegram(from.id, from.username, from.first_name);
+  const service = serviceRepo.getById(serviceId);
+  const validity = validityRepo.getById(validityId);
+
+  if (!service || !validity) {
+    await ctx.answerCallbackQuery({ text: 'Invalid product selected.', show_alert: true });
+    return handleShopMenu(ctx);
+  }
+
+  const priceUsd = settingsRepo.calculateUsd(validity.price);
+  const refId = 'UPI' + Date.now().toString(36).toUpperCase() + crypto.randomBytes(2).toString('hex').toUpperCase();
+
+  const qrData = await upiService.generateUpiQr(validity.price, refId);
+
+  const payment = paymentRepo.create({
+    user_id: user.id,
+    gateway: 'UPI_MANUAL',
+    amount: validity.price,
+    amount_usd: priceUsd,
+    reference_id: refId,
+    gateway_payload: JSON.stringify({ serviceId, validityId, productName: service.name, validityName: validity.name }),
+    status: 'PENDING'
+  });
+
+  const text = `
+⚡ <b>UPI Auto QR Checkout</b>
+
+🎮 <b>Product:</b> ${escapeHtml(service.name)} (${escapeHtml(validity.name)})
+💰 <b>Amount to Pay:</b> <b>₹${validity.price.toFixed(2)}</b>
+🆔 <b>Payment ID:</b> <code>${payment.id}</code>
+
+━━━━━━━━━━━━━━━━━━━━
+📌 <b>Payment Steps:</b>
+
+1️⃣ <b>Scan the QR code</b> using PhonePe, GPay, Paytm, or BHIM.
+2️⃣ Or pay directly to UPI VPA:
+<code>${qrData.vpa}</code>
+
+3️⃣ Ensure exact amount <b>₹${validity.price.toFixed(2)}</b> is entered.
+4️⃣ After payment, click <b>Check Payment Status</b> below.
+━━━━━━━━━━━━━━━━━━━━
+`.trim();
+
+  const kb = keyboards.paymentPendingActions(payment.id);
+
+  if (qrData.qrBuffer) {
+    await ctx.replyWithPhoto(new InputFile(qrData.qrBuffer, 'upi_qr.png'), {
+      caption: text,
+      parse_mode: 'HTML',
+      reply_markup: kb
+    });
+  } else {
+    await ctx.editMessageText(text, {
+      parse_mode: 'HTML',
+      reply_markup: kb
+    });
+  }
+  await ctx.answerCallbackQuery();
+}
+
+/**
+ * Handle Direct Binance Pay / USDT Checkout for Selected Product
+ */
+export async function handlePurchaseDirectBinance(ctx: Context, serviceId: string, validityId: string) {
   const from = ctx.from;
   if (!from) return;
 
@@ -349,20 +417,20 @@ export async function handlePurchaseBinance(ctx: Context, serviceId: string, val
     amount: validity.price,
     amount_usd: priceUsd,
     reference_id: refId,
-    gateway_payload: JSON.stringify({ ...binanceData, serviceId, validityId }),
+    gateway_payload: JSON.stringify({ ...binanceData, serviceId, validityId, productName: service.name, validityName: validity.name }),
     status: 'PENDING'
   });
 
   const text = `
-💎 <b>Binance Pay / USDT Checkout</b>
+🟡 <b>Binance Pay / USDT Checkout</b>
 
 🎮 <b>Product:</b> ${escapeHtml(service.name)} (${escapeHtml(validity.name)})
 💵 <b>Amount to Pay:</b> <b>$${priceUsd.toFixed(2)} USDT</b>
 💵 <b>Equivalent INR:</b> ₹${validity.price.toFixed(2)}
-🆔 <b>Payment Ref:</b> <code>${payment.id}</code>
+🆔 <b>Payment ID:</b> <code>${payment.id}</code>
 
 ━━━━━━━━━━━━━━━━━━━━
-📌 <b>Payment Instructions:</b>
+📌 <b>Payment Steps:</b>
 
 1️⃣ <b>Binance Pay ID / Merchant:</b>
 <code>${binanceData.merchantId || 'Contact Support'}</code>

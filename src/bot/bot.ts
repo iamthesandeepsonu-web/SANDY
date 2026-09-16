@@ -8,7 +8,8 @@ import {
   handleServiceSelect,
   handleValiditySelect,
   handlePurchaseInr,
-  handlePurchaseBinance
+  handlePurchaseDirectUpi,
+  handlePurchaseDirectBinance
 } from './handlers/shopHandler.js';
 import { handleMyOrders } from './handlers/ordersHandler.js';
 import { handleProfile } from './handlers/profileHandler.js';
@@ -140,6 +141,18 @@ export function createTelegramBot(): Bot | null {
       const validityId = parts.slice(1).join('_');
       return handleValiditySelect(ctx, serviceId, validityId);
     }
+    if (data.startsWith('pay_direct_upi_')) {
+      const parts = data.replace('pay_direct_upi_', '').split('_');
+      const serviceId = parts[0];
+      const validityId = parts.slice(1).join('_');
+      return handlePurchaseDirectUpi(ctx, serviceId, validityId);
+    }
+    if (data.startsWith('pay_direct_binance_')) {
+      const parts = data.replace('pay_direct_binance_', '').split('_');
+      const serviceId = parts[0];
+      const validityId = parts.slice(1).join('_');
+      return handlePurchaseDirectBinance(ctx, serviceId, validityId);
+    }
     if (data.startsWith('pay_inr_topup_')) {
       const parts = data.replace('pay_inr_topup_', '').split('_');
       // Format: pay_inr_topup_{serviceId}_{validityId}_{amount}
@@ -156,7 +169,7 @@ export function createTelegramBot(): Bot | null {
       const parts = data.replace('pay_binance_', '').split('_');
       const serviceId = parts[0];
       const validityId = parts.slice(1).join('_');
-      return handlePurchaseBinance(ctx, serviceId, validityId);
+      return handlePurchaseDirectBinance(ctx, serviceId, validityId);
     }
     if (data.startsWith('buy_confirm_')) {
       const parts = data.replace('buy_confirm_', '').split('_');
