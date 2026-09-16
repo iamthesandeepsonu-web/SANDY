@@ -2,6 +2,7 @@ import { Bot, InlineKeyboard } from 'grammy';
 import { config } from '../config/index.js';
 import { settingsRepo } from '../database/repositories/settingsRepo.js';
 import { userRepo } from '../database/repositories/userRepo.js';
+import { serviceRepo } from '../database/repositories/serviceRepo.js';
 import { handleStart } from './handlers/startHandler.js';
 import {
   handleShopMenu,
@@ -28,6 +29,45 @@ import {
   handleAdminToggleMaintenance,
   isUserAdmin
 } from './handlers/adminBotHandler.js';
+
+function parseServiceAndValidity(data: string, prefixes: string[]): { serviceId: string; validityId: string } {
+  let raw = data;
+  for (const prefix of prefixes) {
+    if (raw.startsWith(prefix)) {
+      raw = raw.slice(prefix.length);
+      break;
+    }
+  }
+
+  // 1. Explicit '::' delimiter
+  if (raw.includes('::')) {
+    const [serviceId, validityId] = raw.split('::');
+    return { serviceId: serviceId || '', validityId: validityId || '' };
+  }
+
+  // 2. Search against database services to accurately match IDs containing '_' (e.g. srv_apple)
+  const allServices = serviceRepo.getAll();
+  for (const srv of allServices) {
+    if (raw.startsWith(srv.id + '_')) {
+      const validityId = raw.slice(srv.id.length + 1);
+      return { serviceId: srv.id, validityId };
+    }
+    if (raw === srv.id) {
+      return { serviceId: srv.id, validityId: '' };
+    }
+  }
+
+  // 3. Last resort: split at first underscore
+  const firstUnderscore = raw.indexOf('_');
+  if (firstUnderscore !== -1) {
+    return {
+      serviceId: raw.substring(0, firstUnderscore),
+      validityId: raw.substring(firstUnderscore + 1)
+    };
+  }
+
+  return { serviceId: raw, validityId: '' };
+}
 
 export function createTelegramBot(): Bot | null {
   const token = config.bot.token;
@@ -130,51 +170,45 @@ export function createTelegramBot(): Bot | null {
     }
 
     // Shop Flow
-    if (data.startsWith('shop_srv_')) {
-      const serviceId = data.replace('shop_srv_', '');
+    if (data.startsWith('shop_srv::') || data.startsWith('shop_srv_')) {
+      const serviceId = data.startsWith('shop_srv::') ? data.replace('shop_srv::', '') : data.replace('shop_srv_', '');
       return handleServiceSelect(ctx, serviceId);
     }
-    if (data.startsWith('shop_val_')) {
-      const parts = data.replace('shop_val_', '').split('_');
-      // Format: shop_val_{serviceId}_{validityId}
-      const serviceId = parts[0];
-      const validityId = parts.slice(1).join('_');
+
+    if (data.startsWith('shop_val::') || data.startsWith('shop_val_')) {
+      const { serviceId, validityId } = parseServiceAndValidity(data, ['shop_val::', 'shop_val_']);
       return handleValiditySelect(ctx, serviceId, validityId);
     }
-    if (data.startsWith('pay_direct_upi_')) {
-      const parts = data.replace('pay_direct_upi_', '').split('_');
-      const serviceId = parts[0];
-      const validityId = parts.slice(1).join('_');
+
+    if (data.startsWith('pay_direct_upi::') || data.startsWith('pay_direct_upi_')) {
+      const { serviceId, validityId } = parseServiceAndValidity(data, ['pay_direct_upi::', 'pay_direct_upi_']);
       return handlePurchaseDirectUpi(ctx, serviceId, validityId);
     }
-    if (data.startsWith('pay_direct_binance_')) {
-      const parts = data.replace('pay_direct_binance_', '').split('_');
-      const serviceId = parts[0];
-      const validityId = parts.slice(1).join('_');
+
+    if (data.startsWith('pay_direct_binance::') || data.startsWith('pay_direct_binance_')) {
+      const { serviceId, validityId } = parseServiceAndValidity(data, ['pay_direct_binance::', 'pay_direct_binance_']);
       return handlePurchaseDirectBinance(ctx, serviceId, validityId);
     }
+
     if (data.startsWith('pay_inr_topup_')) {
       const parts = data.replace('pay_inr_topup_', '').split('_');
       // Format: pay_inr_topup_{serviceId}_{validityId}_{amount}
-      const amount = parseFloat(parts[2] || '100');
+      const amount = parseFloat(parts[parts.length - 1] || '100');
       return handleSelectPaymentMethod(ctx, amount);
     }
-    if (data.startsWith('pay_inr_')) {
-      const parts = data.replace('pay_inr_', '').split('_');
-      const serviceId = parts[0];
-      const validityId = parts.slice(1).join('_');
+
+    if (data.startsWith('pay_inr::') || data.startsWith('pay_inr_')) {
+      const { serviceId, validityId } = parseServiceAndValidity(data, ['pay_inr::', 'pay_inr_']);
       return handlePurchaseInr(ctx, serviceId, validityId);
     }
-    if (data.startsWith('pay_binance_')) {
-      const parts = data.replace('pay_binance_', '').split('_');
-      const serviceId = parts[0];
-      const validityId = parts.slice(1).join('_');
+
+    if (data.startsWith('pay_binance::') || data.startsWith('pay_binance_')) {
+      const { serviceId, validityId } = parseServiceAndValidity(data, ['pay_binance::', 'pay_binance_']);
       return handlePurchaseDirectBinance(ctx, serviceId, validityId);
     }
-    if (data.startsWith('buy_confirm_')) {
-      const parts = data.replace('buy_confirm_', '').split('_');
-      const serviceId = parts[0];
-      const validityId = parts.slice(1).join('_');
+
+    if (data.startsWith('buy_confirm::') || data.startsWith('buy_confirm_')) {
+      const { serviceId, validityId } = parseServiceAndValidity(data, ['buy_confirm::', 'buy_confirm_']);
       return handlePurchaseInr(ctx, serviceId, validityId);
     }
 

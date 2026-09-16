@@ -22,7 +22,7 @@ export const keyboards = {
   servicesList(services: Service[]): InlineKeyboard {
     const kb = new InlineKeyboard();
     for (const srv of services) {
-      kb.text(`✨ ${srv.name}`, `shop_srv_${srv.id}`).row();
+      kb.text(`✨ ${srv.name}`, `shop_srv::${srv.id}`).row();
     }
     kb.text('← Back to Main Menu', 'menu_main');
     return kb;
@@ -34,7 +34,7 @@ export const keyboards = {
     const kb = new InlineKeyboard();
     for (const val of validities) {
       const usdPrice = usdRate > 0 ? (val.price / usdRate).toFixed(2) : '0.00';
-      kb.text(`${val.name} | ₹${val.price} | $${usdPrice}`, `shop_val_${serviceId}_${val.id}`).row();
+      kb.text(`${val.name} | ₹${val.price} | $${usdPrice}`, `shop_val::${serviceId}::${val.id}`).row();
     }
     kb.text('← Back to Services', 'menu_shop');
     return kb;
@@ -48,17 +48,17 @@ export const keyboards = {
     const kb = new InlineKeyboard();
     
     // Gateway 1: UPI Auto / QR
-    kb.text(`⚡ Pay with UPI — ₹${priceInr.toFixed(2)}`, `pay_direct_upi_${serviceId}_${validityId}`).row();
+    kb.text(`⚡ Pay with UPI — ₹${priceInr.toFixed(2)}`, `pay_direct_upi::${serviceId}::${validityId}`).row();
 
     // Gateway 2: Binance Pay / USDT
-    kb.text(`🟡 Pay with Binance Pay — $${priceUsd.toFixed(2)} USDT`, `pay_direct_binance_${serviceId}_${validityId}`).row();
+    kb.text(`🟡 Pay with Binance Pay — $${priceUsd.toFixed(2)} USDT`, `pay_direct_binance::${serviceId}::${validityId}`).row();
 
     // Optional: If user has sufficient wallet credits
     if (userBalance >= priceInr) {
-      kb.text(`💳 Pay with Wallet Balance (₹${userBalance.toFixed(2)})`, `pay_inr_${serviceId}_${validityId}`).row();
+      kb.text(`💳 Pay with Wallet Balance (₹${userBalance.toFixed(2)})`, `pay_inr::${serviceId}::${validityId}`).row();
     }
 
-    kb.text('← Back to Validities', `shop_srv_${serviceId}`);
+    kb.text('← Back to Validities', `shop_srv::${serviceId}`);
     return kb;
   },
 
@@ -68,7 +68,7 @@ export const keyboards = {
 
   backToValidities(serviceId: string): InlineKeyboard {
     return new InlineKeyboard()
-      .text('← Back to Validities', `shop_srv_${serviceId}`)
+      .text('← Back to Validities', `shop_srv::${serviceId}`)
       .row()
       .text('🛒 All Products', 'menu_shop');
   },
