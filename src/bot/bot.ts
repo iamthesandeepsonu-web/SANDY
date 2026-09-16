@@ -121,9 +121,26 @@ export function createTelegramBot(): Bot | null {
     await next();
   });
 
-  // Commands
-  bot.command('start', handleStart);
-  bot.command('admin', handleAdminCommand);
+  // Persistent Telegram Bot Menu Commands (Always visible ☰ Menu button in Telegram chat)
+  bot.api.setMyCommands([
+    { command: 'start', description: '🏠 Main Menu / Start Bot' },
+    { command: 'shop', description: '🛒 Browse Products & Licenses' },
+    { command: 'orders', description: '📦 My Orders & Purchased Keys' },
+    { command: 'profile', description: '👤 Account & Balance' },
+    { command: 'wallet', description: '💰 Add Balance / Top-Up' },
+    { command: 'help', description: '🎧 Customer Support' }
+  ]).catch((err) => {
+    console.error('ℹ️ Failed to register Telegram bot commands menu:', err.message);
+  });
+
+  // Command Handlers
+  bot.command('start', (ctx) => handleStart(ctx));
+  bot.command('shop', (ctx) => handleShopMenu(ctx));
+  bot.command('orders', (ctx) => handleMyOrders(ctx));
+  bot.command('profile', (ctx) => handleProfile(ctx));
+  bot.command('wallet', (ctx) => handleWalletMenu(ctx));
+  bot.command('help', (ctx) => handleSupport(ctx));
+  bot.command('admin', (ctx) => handleAdminCommand(ctx));
 
   // Text inputs (e.g. custom topup amount)
   bot.on('message:text', async (ctx) => {
