@@ -215,64 +215,15 @@ export function initDatabase() {
     insertSetting.run(s.key, s.value);
   }
 
-  // Seed sample services & validities if fresh DB
-  const row = queryOne<{ count: number }>('SELECT COUNT(*) as count FROM services');
-  const count = row ? Number(row.count) : 0;
-  if (count === 0) {
-    seedInitialCatalog();
-  }
-}
-
-function seedInitialCatalog() {
-  const insertService = db.prepare(`
-    INSERT INTO services (id, name, description, is_active, sort_order)
-    VALUES (?, ?, ?, 1, ?)
-  `);
-
-  const insertValidity = db.prepare(`
-    INSERT INTO validities (id, service_id, name, price, is_active, sort_order)
-    VALUES (?, ?, ?, ?, 1, ?)
-  `);
-
-  const insertLicense = db.prepare(`
-    INSERT INTO licenses (service_id, validity_id, license_key, is_used)
-    VALUES (?, ?, ?, 0)
-  `);
-
-  const insertMapping = db.prepare(`
-    INSERT INTO api_mappings (id, service_id, validity_id, external_product_id, external_product_name, is_enabled)
-    VALUES (?, ?, ?, ?, ?, 1)
-  `);
-
-  runTransaction(() => {
-    // 1. Service: Apple
-    insertService.run('srv_apple', 'Apple', 'Premium Apple Digital License & VIP Pass', 1);
-
-    insertValidity.run('val_apple_1d', 'srv_apple', '1 Day', 450, 1);
-    insertValidity.run('val_apple_7d', 'srv_apple', '7 Days', 800, 2);
-    insertValidity.run('val_apple_30d', 'srv_apple', '30 Days', 1850, 3);
-
-    // Seed 3 local licenses for Apple 1 Day
-    insertLicense.run('srv_apple', 'val_apple_1d', 'APPLE-1D-PROD-8823-7164');
-    insertLicense.run('srv_apple', 'val_apple_1d', 'APPLE-1D-PROD-9912-3341');
-    insertLicense.run('srv_apple', 'val_apple_1d', 'APPLE-1D-PROD-4411-9082');
-
-    // Seed 0 local licenses for Apple 7 Days, but map to External LD API Product
-    insertMapping.run(
-      'map_apple_7d',
-      'srv_apple',
-      'val_apple_7d',
-      'LD_PROD_APPLE_7D',
-      'External Provider: Apple 7 Days VIP'
-    );
-
-    // 2. Service: BGMI VIP
-    insertService.run('srv_bgmi', 'BGMI VIP', 'Undetected Digital License for BGMI', 2);
-    insertValidity.run('val_bgmi_1d', 'srv_bgmi', '1 Day', 350, 1);
-    insertValidity.run('val_bgmi_7d', 'srv_bgmi', '7 Days', 999, 2);
-
-    insertLicense.run('srv_bgmi', 'val_bgmi_1d', 'BGMI-1D-KEY-A109-FF42');
-  });
+  // Clean up unwanted initial sample products if present
+  try {
+    db.exec(`
+      DELETE FROM api_mappings WHERE service_id IN ('srv_apple', 'srv_bgmi');
+      DELETE FROM licenses WHERE service_id IN ('srv_apple', 'srv_bgmi');
+      DELETE FROM validities WHERE service_id IN ('srv_apple', 'srv_bgmi');
+      DELETE FROM services WHERE id IN ('srv_apple', 'srv_bgmi');
+    `);
+  } catch {}
 }
 
 // Auto-initialize DB schema and default settings on import
