@@ -30,13 +30,13 @@ export const keyboards = {
     return kb;
   },
 
-  // 2. Customer-Facing Validity Display: Shows ONLY Validity + INR Price + USD Price
+  // 2. Customer-Facing Validity Display: Shows ONLY Validity ➔ INR Price | USD Price
   // Zero API / technical terminology, zero stock badges on button labels
   validitiesList(serviceId: string, validities: ValidityWithStock[], usdRate = 83.0): InlineKeyboard {
     const kb = new InlineKeyboard();
     for (const val of validities) {
       const usdPrice = usdRate > 0 ? (val.price / usdRate).toFixed(2) : '0.00';
-      kb.text(`${val.name} | ₹${val.price} | $${usdPrice}`, `shop_val::${serviceId}::${val.id}`).row();
+      kb.text(`${val.name} ➔ ₹${val.price} | $${usdPrice}`, `shop_val::${serviceId}::${val.id}`).row();
     }
     kb.text('← Back to Services', 'menu_shop');
     return kb;

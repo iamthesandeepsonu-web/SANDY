@@ -190,7 +190,7 @@ async function runSimulationTests() {
 
     const validityKb = keyboards.validitiesList('srv_apple', validities, 83.0);
     const firstValButtonText = validityKb.inline_keyboard[0][0].text;
-    assert(firstValButtonText.includes('1 Day | ₹450 | $5.42'), `Validity label format: "${firstValButtonText}"`);
+    assert(firstValButtonText.includes('1 Day ➔ ₹450 | $5.42'), `Validity label format: "${firstValButtonText}"`);
     assert(!firstValButtonText.includes('API') && !firstValButtonText.includes('Stock') && !firstValButtonText.includes('Provider'), 'Zero technical/API/stock badges on customer validity label');
 
     // TEST 10: Live Provider Stock Verification Flow
