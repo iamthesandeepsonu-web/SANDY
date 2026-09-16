@@ -28,11 +28,18 @@ async function api(endpoint, options = {}) {
     });
 
     if (res.status === 401) {
-      handleLogout();
-      throw new Error('Session expired. Please log in again.');
+      if (endpoint !== '/auth/login') {
+        handleLogout();
+        throw new Error('Session expired. Please log in again.');
+      }
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.message || 'Invalid admin username or password');
     }
 
     const data = await res.json();
+    if (!res.ok && !data.success) {
+      throw new Error(data.message || `Request failed (${res.status})`);
+    }
     return data;
   } catch (err) {
     console.error(`API Error [${endpoint}]:`, err);
@@ -81,11 +88,24 @@ function openModal(modalId) {
   document.getElementById(modalId)?.classList.remove('hidden');
 }
 
+function safeOn(idOrElement, event, handler) {
+  const el = typeof idOrElement === 'string' ? document.getElementById(idOrElement) : idOrElement;
+  if (el) {
+    el.addEventListener(event, handler);
+  }
+}
+
 // Initialization & Auth
-document.addEventListener('DOMContentLoaded', () => {
+function boot() {
   initApp();
   setupEventListeners();
-});
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', boot);
+} else {
+  boot();
+}
 
 async function initApp() {
   if (!state.token) {
@@ -308,7 +328,8 @@ async function loadServicesData() {
               <button class="btn btn-sm btn-danger" onclick="deleteValidity('${v.id}')"><i class="fa-solid fa-trash"></i></button>
             </td>
           </tr>
-        `).join('')
+        `;
+        }).join('')
         : '<tr><td colspan="7" class="text-center text-muted">No validities created for this service yet.</td></tr>';
 
       return `
@@ -736,12 +757,34 @@ async function loadMaintenanceData() {
 // Event Listeners Setup
 function setupEventListeners() {
   // Login Form
-  document.getElementById('login-form').addEventListener('submit', async (e) => {
+  safeOn('login-form', 'submit', async (e) => {
     e.preventDefault();
-    const username = document.getElementById('username').value.trim();
-    const password = document.getElementById('password').value;
+    const usernameInput = document.getElementById('username');
+    const passwordInput = document.getElementById('password');
     const errBox = document.getElementById('login-error');
-    errBox.classList.add('hidden');
+    const loginBtn = document.getElementById('login-btn');
+
+    const username = usernameInput ? usernameInput.value.trim() : '';
+    const password = passwordInput ? passwordInput.value : '';
+
+    if (!username || !password) {
+      if (errBox) {
+        errBox.textContent = 'Please enter both username and password';
+        errBox.classList.remove('hidden');
+      }
+      return;
+    }
+
+    if (errBox) {
+      errBox.classList.add('hidden');
+      errBox.textContent = '';
+    }
+
+    const origBtnHtml = loginBtn ? loginBtn.innerHTML : 'Sign In';
+    if (loginBtn) {
+      loginBtn.disabled = true;
+      loginBtn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> Authenticating...';
+    }
 
     try {
       const res = await api('/auth/login', {
@@ -749,35 +792,44 @@ function setupEventListeners() {
         body: JSON.stringify({ username, password })
       });
 
-      if (res.success && res.token) {
+      if (res && res.success && res.token) {
         state.token = res.token;
         state.user = res.user;
         localStorage.setItem('admin_token', res.token);
         showAppLayout();
         switchView('overview');
       } else {
-        errBox.textContent = res.message || 'Invalid credentials';
-        errBox.classList.remove('hidden');
+        if (errBox) {
+          errBox.textContent = (res && res.message) || 'Invalid admin username or password';
+          errBox.classList.remove('hidden');
+        }
       }
     } catch (err) {
-      errBox.textContent = err.message || 'Login failed';
-      errBox.classList.remove('hidden');
+      if (errBox) {
+        errBox.textContent = err.message || 'Login failed. Please check credentials.';
+        errBox.classList.remove('hidden');
+      }
+    } finally {
+      if (loginBtn) {
+        loginBtn.disabled = false;
+        loginBtn.innerHTML = origBtnHtml;
+      }
     }
   });
 
   // Logout
-  document.getElementById('logout-btn').addEventListener('click', handleLogout);
+  safeOn('logout-btn', 'click', handleLogout);
 
   // Global Refresh
-  document.getElementById('btn-refresh-global').addEventListener('click', () => {
+  safeOn('btn-refresh-global', 'click', () => {
     loadViewData(state.currentView);
     showToast('Dashboard refreshed');
   });
 
   // USD Rate Form
-  document.getElementById('usd-rate-form')?.addEventListener('submit', async (e) => {
+  safeOn('usd-rate-form', 'submit', async (e) => {
     e.preventDefault();
-    const usdRate = parseFloat(document.getElementById('input-usd-rate').value);
+    const usdRate = parseFloat(document.getElementById('input-usd-rate')?.value);
     if (isNaN(usdRate) || usdRate <= 0) {
       showToast('Please enter a valid positive number for USD rate', 'error');
       return;
@@ -806,12 +858,12 @@ function setupEventListeners() {
     item.addEventListener('click', (e) => {
       e.preventDefault();
       const view = item.dataset.view;
-      switchView(view);
+      if (view) switchView(view);
     });
   });
 
   // Services View Actions
-  document.getElementById('btn-add-service').addEventListener('click', () => {
+  safeOn('btn-add-service', 'click', () => {
     document.getElementById('modal-service-title').textContent = 'Add New Service';
     document.getElementById('service-is-edit').value = '0';
     document.getElementById('service-id-input').value = '';
@@ -822,7 +874,7 @@ function setupEventListeners() {
     openModal('modal-service');
   });
 
-  document.getElementById('form-service').addEventListener('submit', async (e) => {
+  safeOn('form-service', 'submit', async (e) => {
     e.preventDefault();
     const isEdit = document.getElementById('service-is-edit').value === '1';
     const id = document.getElementById('service-id-input').value.trim();
@@ -852,7 +904,7 @@ function setupEventListeners() {
   });
 
   // Validity Form
-  document.getElementById('form-validity').addEventListener('submit', async (e) => {
+  safeOn('form-validity', 'submit', async (e) => {
     e.preventDefault();
     const serviceId = document.getElementById('val-service-id').value;
     const isEdit = document.getElementById('val-is-edit').value === '1';
@@ -883,15 +935,16 @@ function setupEventListeners() {
   });
 
   // Bulk License Modal Trigger
-  document.getElementById('btn-bulk-license-modal').addEventListener('click', () => {
+  safeOn('btn-bulk-license-modal', 'click', () => {
     loadServicesForFilters();
     openModal('modal-bulk-license');
   });
 
   // Bulk Service select change -> update validities
-  document.getElementById('bulk-service-select').addEventListener('change', async (e) => {
+  safeOn('bulk-service-select', 'change', async (e) => {
     const srvId = e.target.value;
     const valSelect = document.getElementById('bulk-validity-select');
+    if (!valSelect) return;
     if (!srvId) {
       valSelect.innerHTML = '<option value="">Select Service First</option>';
       return;
@@ -904,7 +957,7 @@ function setupEventListeners() {
   });
 
   // Bulk Upload Form
-  document.getElementById('form-bulk-license').addEventListener('submit', async (e) => {
+  safeOn('form-bulk-license', 'submit', async (e) => {
     e.preventDefault();
     const serviceId = document.getElementById('bulk-service-select').value;
     const validityId = document.getElementById('bulk-validity-select').value;
@@ -930,25 +983,27 @@ function setupEventListeners() {
   });
 
   // Filters for Licenses
-  document.getElementById('lic-filter-service').addEventListener('change', (e) => {
+  safeOn('lic-filter-service', 'change', (e) => {
     const srvId = e.target.value;
     const valSelect = document.getElementById('lic-filter-validity');
-    if (!srvId) {
-      valSelect.innerHTML = '<option value="">All Validities</option>';
-    } else {
-      const srv = state.services.find(s => s.id === srvId);
-      if (srv && srv.validities) {
-        valSelect.innerHTML = '<option value="">All Validities</option>' + srv.validities.map(v => `<option value="${v.id}">${escapeHtml(v.name)}</option>`).join('');
+    if (valSelect) {
+      if (!srvId) {
+        valSelect.innerHTML = '<option value="">All Validities</option>';
+      } else {
+        const srv = state.services.find(s => s.id === srvId);
+        if (srv && srv.validities) {
+          valSelect.innerHTML = '<option value="">All Validities</option>' + srv.validities.map(v => `<option value="${v.id}">${escapeHtml(v.name)}</option>`).join('');
+        }
       }
     }
     loadLicensesData();
   });
-  document.getElementById('lic-filter-validity').addEventListener('change', loadLicensesData);
-  document.getElementById('lic-filter-status').addEventListener('change', loadLicensesData);
-  document.getElementById('lic-filter-search').addEventListener('input', debounce(loadLicensesData, 300));
+  safeOn('lic-filter-validity', 'change', loadLicensesData);
+  safeOn('lic-filter-status', 'change', loadLicensesData);
+  safeOn('lic-filter-search', 'input', debounce(loadLicensesData, 300));
 
   // LD API Settings
-  document.getElementById('ld-settings-form').addEventListener('submit', async (e) => {
+  safeOn('ld-settings-form', 'submit', async (e) => {
     e.preventDefault();
     const endpoint = document.getElementById('ld-endpoint-input').value.trim();
     const token = document.getElementById('ld-token-input').value.trim();
@@ -968,7 +1023,7 @@ function setupEventListeners() {
     }
   });
 
-  document.getElementById('btn-test-ld-connection').addEventListener('click', async () => {
+  safeOn('btn-test-ld-connection', 'click', async () => {
     try {
       const res = await api('/settings/ld/test', { method: 'POST' });
       showToast(res.message, res.success ? 'success' : 'error');
@@ -978,7 +1033,7 @@ function setupEventListeners() {
     }
   });
 
-  document.getElementById('btn-fetch-ld-products').addEventListener('click', async () => {
+  safeOn('btn-fetch-ld-products', 'click', async () => {
     try {
       const res = await api('/settings/ld/products');
       if (res.success && res.products) {
@@ -994,22 +1049,23 @@ function setupEventListeners() {
     }
   });
 
-  document.getElementById('btn-create-mapping-modal').addEventListener('click', () => {
+  safeOn('btn-create-mapping-modal', 'click', () => {
     loadServicesForFilters();
     openModal('modal-mapping');
     populateMappingModal();
   });
 
-  document.getElementById('map-service-select').addEventListener('change', (e) => {
+  safeOn('map-service-select', 'change', (e) => {
     const srvId = e.target.value;
     const valSelect = document.getElementById('map-validity-select');
+    if (!valSelect) return;
     const srv = state.services.find(s => s.id === srvId);
     if (srv && srv.validities) {
       valSelect.innerHTML = srv.validities.map(v => `<option value="${v.id}">${escapeHtml(v.name)}</option>`).join('');
     }
   });
 
-  document.getElementById('form-mapping').addEventListener('submit', async (e) => {
+  safeOn('form-mapping', 'submit', async (e) => {
     e.preventDefault();
     const serviceId = document.getElementById('map-service-select').value;
     const validityId = document.getElementById('map-validity-select').value;
@@ -1041,7 +1097,7 @@ function setupEventListeners() {
   });
 
   // Binance & UPI Settings
-  document.getElementById('binance-settings-form').addEventListener('submit', async (e) => {
+  safeOn('binance-settings-form', 'submit', async (e) => {
     e.preventDefault();
     const apiKey = document.getElementById('binance-api-key').value;
     const secretKey = document.getElementById('binance-secret-key').value;
@@ -1060,7 +1116,7 @@ function setupEventListeners() {
     }
   });
 
-  document.getElementById('btn-test-binance-connection').addEventListener('click', async () => {
+  safeOn('btn-test-binance-connection', 'click', async () => {
     try {
       const res = await api('/settings/payments/binance/test', { method: 'POST' });
       showToast(res.message, res.success ? 'success' : 'error');
@@ -1069,7 +1125,7 @@ function setupEventListeners() {
     }
   });
 
-  document.getElementById('upi-settings-form').addEventListener('submit', async (e) => {
+  safeOn('upi-settings-form', 'submit', async (e) => {
     e.preventDefault();
     const merchantVpa = document.getElementById('upi-vpa').value;
     const merchantName = document.getElementById('upi-name').value;
@@ -1087,7 +1143,7 @@ function setupEventListeners() {
   });
 
   // Maintenance Toggle & Form
-  document.getElementById('maintenance-toggle-input').addEventListener('change', async (e) => {
+  safeOn('maintenance-toggle-input', 'change', async (e) => {
     const enabled = e.target.checked;
     try {
       const res = await api('/settings/maintenance', {
@@ -1101,7 +1157,7 @@ function setupEventListeners() {
     }
   });
 
-  document.getElementById('maintenance-form').addEventListener('submit', async (e) => {
+  safeOn('maintenance-form', 'submit', async (e) => {
     e.preventDefault();
     const message = document.getElementById('maintenance-msg-input').value;
     try {
@@ -1116,9 +1172,9 @@ function setupEventListeners() {
   });
 
   // Orders and Users filters
-  document.getElementById('orders-filter-type').addEventListener('change', loadOrdersData);
-  document.getElementById('orders-filter-search').addEventListener('input', debounce(loadOrdersData, 300));
-  document.getElementById('users-search-input').addEventListener('input', debounce(loadUsersData, 300));
+  safeOn('orders-filter-type', 'change', loadOrdersData);
+  safeOn('orders-filter-search', 'input', debounce(loadOrdersData, 300));
+  safeOn('users-search-input', 'input', debounce(loadUsersData, 300));
 }
 
 function populateMappingModal() {

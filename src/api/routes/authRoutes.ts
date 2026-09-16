@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { authService } from '../../services/authService.js';
+import { config } from '../../config/index.js';
 import { requireAdmin } from '../middlewares/authMiddleware.js';
 
 export const authRoutes = Router();
@@ -11,16 +12,21 @@ authRoutes.post('/login', (req, res) => {
     return res.status(400).json({ success: false, message: 'Username and password are required' });
   }
 
-  const isValid = authService.verifyPassword(password);
-  if (!isValid) {
-    return res.status(401).json({ success: false, message: 'Invalid admin credentials' });
+  const expectedUsername = (config.admin.username || 'admin').trim().toLowerCase();
+  const inputUsername = String(username).trim().toLowerCase();
+
+  const isUserValid = inputUsername === expectedUsername || inputUsername === 'admin';
+  const isPassValid = authService.verifyPassword(String(password));
+
+  if (!isUserValid || !isPassValid) {
+    return res.status(401).json({ success: false, message: 'Invalid admin username or password' });
   }
 
   const token = authService.generateToken(username);
   return res.json({
     success: true,
     token,
-    user: { username, role: 'admin' }
+    user: { username: String(username).trim(), role: 'admin' }
   });
 });
 
@@ -39,13 +45,13 @@ authRoutes.post('/change-password', requireAdmin, (req, res) => {
     return res.status(400).json({ success: false, message: 'Current and new password are required' });
   }
 
-  const isValid = authService.verifyPassword(currentPassword);
+  const isValid = authService.verifyPassword(String(currentPassword));
   if (!isValid) {
     return res.status(400).json({ success: false, message: 'Current password is incorrect' });
   }
 
   try {
-    authService.updatePassword(newPassword);
+    authService.updatePassword(String(newPassword));
     return res.json({ success: true, message: 'Password updated successfully' });
   } catch (err: any) {
     return res.status(400).json({ success: false, message: err.message });

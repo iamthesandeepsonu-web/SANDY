@@ -10,7 +10,20 @@ export async function handleShopMenu(ctx: Context) {
   const services = serviceRepo.getAll(true); // Only active, enabled services
 
   if (services.length === 0) {
-    const text = '🛒 <b>Shop Now</b>\n\nNo active products are available right now. Please check back shortly!';
+    const text = `
+🎮 <b>CHOOSE YOUR GAME</b>
+
+📦 <b>AVAILABLE PRODUCTS</b>
+
+⚡ <b>Premium Keys</b>
+🚀 <b>Instant Delivery</b>
+🔒 <b>Secure Payment</b>
+💬 <b>24/7 Support</b>
+
+👇 <b>SELECT YOUR PRODUCT</b>
+
+<i>No active products are available right now. Please check back shortly!</i>
+`.trim();
     if (ctx.callbackQuery) {
       await ctx.editMessageText(text, { parse_mode: 'HTML', reply_markup: keyboards.backToMain() });
       await ctx.answerCallbackQuery();
@@ -20,8 +33,23 @@ export async function handleShopMenu(ctx: Context) {
     return;
   }
 
-  // Vertical list of products
-  const text = '🛒 <b>Shop Now</b>\n\nSelect a product:';
+  // Exact requested header structure:
+  // 1. CHOOSE YOUR GAME
+  // 2. AVAILABLE PRODUCTS
+  // 3. Feature highlights (Premium Keys, Instant Delivery, Secure Payment, 24/7 Support)
+  // 4. SELECT YOUR PRODUCT (immediately preceding the product buttons list)
+  const text = `
+🎮 <b>CHOOSE YOUR GAME</b>
+
+📦 <b>AVAILABLE PRODUCTS</b>
+
+⚡ <b>Premium Keys</b>
+🚀 <b>Instant Delivery</b>
+🔒 <b>Secure Payment</b>
+💬 <b>24/7 Support</b>
+
+👇 <b>SELECT YOUR PRODUCT</b>
+`.trim();
   const kb = keyboards.servicesList(services);
 
   if (ctx.callbackQuery) {
