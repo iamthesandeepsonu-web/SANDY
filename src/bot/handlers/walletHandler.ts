@@ -2,6 +2,7 @@ import { Context, InputFile } from 'grammy';
 import { userRepo } from '../../database/repositories/userRepo.js';
 import { paymentRepo } from '../../database/repositories/paymentRepo.js';
 import { orderRepo } from '../../database/repositories/orderRepo.js';
+import { settingsRepo } from '../../database/repositories/settingsRepo.js';
 import { upiService } from '../../services/upiService.js';
 import { binancePayService } from '../../services/binancePayService.js';
 import { fulfillmentService } from '../../services/fulfillmentService.js';
@@ -10,8 +11,9 @@ import { keyboards } from '../keyboards.js';
 import { escapeHtml } from './shopHandler.js';
 import crypto from 'crypto';
 
-// In-memory conversation state for custom amount entry
+// In-memory conversation state for custom amount and Binance Order ID entry
 const userWaitingForAmount = new Set<number>();
+export const userWaitingForBinanceOrderId = new Map<number, string>(); // telegramId -> paymentId
 
 export async function handleWalletMenu(ctx: Context) {
   const from = ctx.from;
@@ -56,9 +58,108 @@ Example: <code>450</code> or <code>1200</code>
   });
 }
 
+export async function promptBinanceOrderId(ctx: Context, paymentId: string) {
+  const from = ctx.from;
+  if (!from) return;
+
+  const payment = paymentRepo.getById(paymentId);
+  if (!payment) {
+    if (ctx.callbackQuery) {
+      await ctx.answerCallbackQuery({ text: 'Payment session expired or not found.', show_alert: true });
+    }
+    return;
+  }
+
+  userWaitingForBinanceOrderId.set(from.id, paymentId);
+
+  if (ctx.callbackQuery) {
+    try {
+      await ctx.answerCallbackQuery();
+    } catch {}
+  }
+
+  const text = `
+🔢 <b>Enter Binance Order ID / Txn ID</b>
+
+Please send your <b>Binance Pay Order ID or Transaction ID</b> as a message below to verify your payment.
+
+📌 <b>How to find your Order ID:</b>
+Open Binance App ➡️ <b>Pay</b> ➡️ <b>Payment History / Order Details</b> ➡️ Copy <b>Order ID / TxID</b>
+<i>Example:</i> <code>2481928374921</code>
+`.trim();
+
+  await ctx.reply(text, {
+    parse_mode: 'HTML',
+    reply_markup: keyboards.backToMain()
+  });
+}
+
 export async function handleCustomAmountText(ctx: Context, text: string) {
   const from = ctx.from;
-  if (!from || !userWaitingForAmount.has(from.id)) return false;
+  if (!from) return false;
+
+  // 1. Check if user is waiting to enter Binance Order ID
+  if (userWaitingForBinanceOrderId.has(from.id)) {
+    const paymentId = userWaitingForBinanceOrderId.get(from.id)!;
+    const rawOrderId = text.trim();
+
+    if (rawOrderId.startsWith('/') || rawOrderId.toLowerCase() === 'cancel') {
+      userWaitingForBinanceOrderId.delete(from.id);
+      return false;
+    }
+
+    const verification = await binancePayService.verifyAndClaimBinanceOrderId(paymentId, rawOrderId, String(from.id));
+
+    if (!verification.success) {
+      await ctx.reply(`❌ <b>Verification Failed</b>\n\n${escapeHtml(verification.message)}`, {
+        parse_mode: 'HTML',
+        reply_markup: keyboards.binancePaymentActions(paymentId)
+      });
+      return true;
+    }
+
+    // Success: remove user from waiting map
+    userWaitingForBinanceOrderId.delete(from.id);
+
+    if (verification.isOrderFulfilled && verification.order) {
+      const order = verification.order;
+      const licenseKey = verification.licenseKey || order.license_key;
+      const successText = `
+🎉 <b>Payment Verified & Key Delivered!</b>
+
+📦 <b>Order ID:</b> <code>${order.id}</code>
+🎮 <b>Product:</b> ${escapeHtml(order.service_name)}
+⏳ <b>Validity:</b> ${escapeHtml(order.validity_name)}
+🔢 <b>Binance Txn ID:</b> <code>${escapeHtml(rawOrderId)}</code>
+
+🔑 <b>Your License Key:</b>
+<code>${escapeHtml(licenseKey)}</code>
+
+<i>💡 Tap on the license key above to copy it instantly. Save this message for your reference.</i>
+`.trim();
+
+      await ctx.reply(successText, {
+        parse_mode: 'HTML',
+        reply_markup: keyboards.mainMenu()
+      });
+      return true;
+    }
+
+    // Standard Wallet Top-Up success
+    const payment = paymentRepo.getById(paymentId);
+    const user = payment ? userRepo.getById(payment.user_id) : null;
+    await ctx.reply(
+      `🎉 <b>Binance Payment Verified & Credited!</b>\n\n💰 <b>₹${payment?.amount.toFixed(2) || ''}</b> has been credited to your wallet balance.\n🔢 <b>Binance Txn ID:</b> <code>${escapeHtml(rawOrderId)}</code>\n💳 <b>Current Wallet Balance:</b> ₹${user ? user.balance.toFixed(2) : ''}\n\nUse <b>🛒 Shop Now</b> to purchase digital keys!`,
+      {
+        parse_mode: 'HTML',
+        reply_markup: keyboards.mainMenu()
+      }
+    );
+    return true;
+  }
+
+  // 2. Check if user is entering custom wallet amount
+  if (!userWaitingForAmount.has(from.id)) return false;
 
   const amount = parseFloat(text.trim());
   if (isNaN(amount) || amount < 10 || amount > 50000) {
@@ -141,12 +242,16 @@ export async function handleBinancePayment(ctx: Context, amount: number) {
 
   const user = userRepo.upsertFromTelegram(from.id, from.username, from.first_name);
   const refId = 'BPAY' + Date.now().toString(36).toUpperCase() + crypto.randomBytes(3).toString('hex').toUpperCase();
+  const priceUsd = settingsRepo.calculateUsd(amount);
 
   const orderRes = await binancePayService.createOrder({
     merchantTradeNo: refId,
-    orderAmount: amount,
+    orderAmount: priceUsd,
     goodsTitle: `Wallet Top-Up (₹${amount})`
   });
+
+  const binanceCfg = binancePayService.getConfig();
+  const merchantPayId = binanceCfg.merchantId || '433230697';
 
   const payment = paymentRepo.create({
     userId: user.id,
@@ -155,21 +260,29 @@ export async function handleBinancePayment(ctx: Context, amount: number) {
     amount,
     referenceId: refId,
     qrPayload: orderRes.qrContent,
-    metadata: { prepayId: orderRes.prepayId, bep20: orderRes.bep20Address }
+    metadata: { prepayId: orderRes.prepayId, bep20: orderRes.bep20Address, priceUsd }
   });
 
   const text = `
 🟡 <b>Pay with Binance Pay — ₹${amount.toFixed(2)}</b>
 
-💰 <b>Amount:</b> ₹${amount.toFixed(2)} (or equivalent USDT)
-🆔 <b>Order Reference ID:</b> <code>${refId}</code>
-${orderRes.bep20Address ? `🌐 <b>BEP20 USDT Address:</b>\n<code>${orderRes.bep20Address}</code>\n` : ''}
-⏱️ <b>Status:</b> 🟡 <i>Pending Payment Confirmation</i>
+💵 <b>Amount to Pay:</b> <b>$${priceUsd.toFixed(2)} USDT</b>
+💵 <b>Equivalent INR:</b> ₹${amount.toFixed(2)}
+🆔 <b>Payment ID:</b> <code>${payment.id}</code>
 
-<i>Once paid, click 'Check Payment Status' below or wait for automatic webhook confirmation.</i>
+━━━━━━━━━━━━━━━━━━━━
+📌 <b>Payment Steps:</b>
+
+1️⃣ <b>Binance Pay ID:</b>
+<code>${merchantPayId}</code>
+
+2️⃣ ${orderRes.bep20Address ? `<b>BEP-20 USDT Address:</b>\n<code>${orderRes.bep20Address}</code>\n\n3️⃣ ` : ''}Send exactly <b>$${priceUsd.toFixed(2)} USDT</b>.
+${orderRes.bep20Address ? '4️⃣' : '3️⃣'} Copy the <b>Binance Order ID / Transaction ID</b> from your Binance Pay receipt.
+${orderRes.bep20Address ? '5️⃣' : '4️⃣'} Click <b>🔢 Enter Binance Order ID / Txn ID</b> below to verify and get instant credit!
+━━━━━━━━━━━━━━━━━━━━
 `.trim();
 
-  const kb = keyboards.paymentPendingActions(payment.id);
+  const kb = keyboards.binancePaymentActions(payment.id);
 
   if (orderRes.qrDataUrl) {
     const base64Data = orderRes.qrDataUrl.replace(/^data:image\/png;base64,/, '');

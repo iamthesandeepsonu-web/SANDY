@@ -17,6 +17,7 @@ import { handleProfile } from './handlers/profileHandler.js';
 import {
   handleWalletMenu,
   promptCustomAmount,
+  promptBinanceOrderId,
   handleCustomAmountText,
   handleSelectPaymentMethod,
   handleUpiPayment,
@@ -251,6 +252,10 @@ export function createTelegramBot(): Bot | null {
     if (data.startsWith('pay_method_binance_')) {
       const amount = parseFloat(data.replace('pay_method_binance_', ''));
       return handleBinancePayment(ctx, amount);
+    }
+    if (data.startsWith('binance_enter_order_')) {
+      const paymentId = data.replace('binance_enter_order_', '');
+      return promptBinanceOrderId(ctx, paymentId);
     }
     if (data.startsWith('pay_check_')) {
       const paymentId = data.replace('pay_check_', '');

@@ -98,6 +98,17 @@ export const paymentRepo = {
     });
   },
 
+  isExternalTxIdUsed(txId: string): boolean {
+    if (!txId || !txId.trim()) return false;
+    const clean = txId.trim();
+    const row = queryOne<{ count: number }>(`
+      SELECT COUNT(*) as count 
+      FROM payments 
+      WHERE external_tx_id = ? AND status = 'COMPLETED'
+    `, clean);
+    return Number(row?.count || 0) > 0;
+  },
+
   failPayment(paymentId: string, reason?: string) {
     db.prepare(`
       UPDATE payments 

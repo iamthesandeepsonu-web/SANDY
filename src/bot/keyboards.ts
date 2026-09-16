@@ -101,6 +101,13 @@ export const keyboards = {
       .text('← Back to Main Menu', 'menu_main');
   },
 
+  binancePaymentActions(paymentId: string): InlineKeyboard {
+    return new InlineKeyboard()
+      .text('🔢 Enter Binance Order ID / Txn ID', `binance_enter_order_${paymentId}`).row()
+      .text('🔄 Check Live Status', `pay_check_${paymentId}`).row()
+      .text('← Back to Main Menu', 'menu_main');
+  },
+
   ordersPagination(page: number, totalPages: number): InlineKeyboard {
     const kb = new InlineKeyboard();
     if (page > 1) {

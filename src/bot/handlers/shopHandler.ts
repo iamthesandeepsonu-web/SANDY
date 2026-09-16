@@ -498,18 +498,16 @@ export async function handlePurchaseDirectBinance(ctx: Context, serviceId: strin
 ━━━━━━━━━━━━━━━━━━━━
 📌 <b>Payment Steps:</b>
 
-1️⃣ <b>Binance Pay ID / Merchant:</b>
-<code>${binanceData.merchantId || 'Contact Support'}</code>
+1️⃣ <b>Binance Pay ID:</b>
+<code>${binanceData.merchantId || '433230697'}</code>
 
-2️⃣ <b>BEP-20 USDT Address:</b>
-<code>${binanceData.bep20Address || 'Contact Admin'}</code>
-
-3️⃣ Send exactly <b>$${priceUsd.toFixed(2)} USDT</b>.
-4️⃣ After transferring, click <b>Check Payment Status</b> below.
+2️⃣ ${binanceData.bep20Address ? `<b>BEP-20 USDT Address:</b>\n<code>${binanceData.bep20Address}</code>\n\n3️⃣ ` : ''}Send exactly <b>$${priceUsd.toFixed(2)} USDT</b>.
+${binanceData.bep20Address ? '4️⃣' : '3️⃣'} Copy the <b>Binance Order ID / TxID</b> from your payment receipt.
+${binanceData.bep20Address ? '5️⃣' : '4️⃣'} Click <b>🔢 Enter Binance Order ID / Txn ID</b> below for instant key delivery!
 ━━━━━━━━━━━━━━━━━━━━
 `.trim();
 
-    const kb = keyboards.paymentPendingActions(payment.id);
+    const kb = keyboards.binancePaymentActions(payment.id);
 
     try {
       if (binanceData.qrBase64) {
