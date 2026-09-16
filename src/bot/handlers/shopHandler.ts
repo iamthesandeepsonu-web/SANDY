@@ -2,14 +2,15 @@ import { Context } from 'grammy';
 import { serviceRepo } from '../../database/repositories/serviceRepo.js';
 import { validityRepo } from '../../database/repositories/validityRepo.js';
 import { userRepo } from '../../database/repositories/userRepo.js';
+import { settingsRepo } from '../../database/repositories/settingsRepo.js';
 import { fulfillmentService } from '../../services/fulfillmentService.js';
 import { keyboards } from '../keyboards.js';
 
 export async function handleShopMenu(ctx: Context) {
-  const services = serviceRepo.getAll(true); // Only active services
+  const services = serviceRepo.getAll(true); // Only active, enabled services
 
   if (services.length === 0) {
-    const text = '🛒 <b>Product Catalog</b>\n\nNo active services are available right now. Please check back shortly!';
+    const text = '🛒 <b>Shop Now</b>\n\nNo active products are available right now. Please check back shortly!';
     if (ctx.callbackQuery) {
       await ctx.editMessageText(text, { parse_mode: 'HTML', reply_markup: keyboards.backToMain() });
       await ctx.answerCallbackQuery();
@@ -19,7 +20,8 @@ export async function handleShopMenu(ctx: Context) {
     return;
   }
 
-  const text = '🛒 <b>Select a Service / Product:</b>\n\nChoose from our available digital products below:';
+  // Vertical list of products
+  const text = '🛒 <b>Shop Now</b>\n\nSelect a product:';
   const kb = keyboards.servicesList(services);
 
   if (ctx.callbackQuery) {
@@ -33,14 +35,15 @@ export async function handleShopMenu(ctx: Context) {
 export async function handleServiceSelect(ctx: Context, serviceId: string) {
   const service = serviceRepo.getById(serviceId);
   if (!service || !service.is_active) {
-    await ctx.answerCallbackQuery({ text: 'This service is currently unavailable.', show_alert: true });
+    await ctx.answerCallbackQuery({ text: 'This product is currently unavailable.', show_alert: true });
     return handleShopMenu(ctx);
   }
 
   const validities = validityRepo.getByServiceIdWithStock(serviceId, true); // Only active validities
+  const usdRate = settingsRepo.getUsdRate();
 
   if (validities.length === 0) {
-    const text = `🎮 <b>${escapeHtml(service.name)}</b>\n\n${service.description ? escapeHtml(service.description) + '\n\n' : ''}No validity plans are active for this service at the moment.`;
+    const text = `🎮 <b>${escapeHtml(service.name)}</b>\n\n${service.description ? escapeHtml(service.description) + '\n\n' : ''}No validity plans are active for this product at the moment.`;
     await ctx.editMessageText(text, { parse_mode: 'HTML', reply_markup: keyboards.servicesList(serviceRepo.getAll(true)) });
     await ctx.answerCallbackQuery();
     return;
@@ -49,10 +52,11 @@ export async function handleServiceSelect(ctx: Context, serviceId: string) {
   const text = `
 🎮 <b>${escapeHtml(service.name)}</b>
 ${service.description ? `<i>${escapeHtml(service.description)}</i>\n` : ''}
-Select your desired validity duration:
+Select Validity:
 `.trim();
 
-  const kb = keyboards.validitiesList(serviceId, validities);
+  // Shows only: Validity | INR Price | USD Price
+  const kb = keyboards.validitiesList(serviceId, validities, usdRate);
   await ctx.editMessageText(text, { parse_mode: 'HTML', reply_markup: kb });
   await ctx.answerCallbackQuery();
 }
@@ -63,16 +67,14 @@ export async function handleValiditySelect(ctx: Context, serviceId: string, vali
 
   const user = userRepo.upsertFromTelegram(from.id, from.username, from.first_name);
   const service = serviceRepo.getById(serviceId);
-  const validity = validityRepo.getByIdWithStock(validityId);
+  const validity = validityRepo.getById(validityId);
 
   if (!service || !validity) {
     await ctx.answerCallbackQuery({ text: 'Invalid product selected.', show_alert: true });
     return handleShopMenu(ctx);
   }
 
-  const stockStatus = validity.available_stock > 0 
-    ? `🟢 <b>In Stock</b> (${validity.available_stock} keys ready)` 
-    : (validity.is_api_mapped ? '🟢 <b>Instant Auto-Fulfillment Active</b>' : '🔴 <b>Out of Stock</b>');
+  const priceUsd = settingsRepo.calculateUsd(validity.price);
 
   const balanceStatus = user.balance >= validity.price
     ? `✅ <i>Sufficient balance (₹${user.balance.toFixed(2)})</i>`
@@ -81,16 +83,15 @@ export async function handleValiditySelect(ctx: Context, serviceId: string, vali
   const text = `
 📦 <b>Product Checkout Summary</b>
 
-🔹 <b>Service:</b> ${escapeHtml(service.name)}
+🔹 <b>Product:</b> ${escapeHtml(service.name)}
 🔹 <b>Validity:</b> ${escapeHtml(validity.name)}
-💰 <b>Price:</b> ₹${validity.price.toFixed(2)}
-📊 <b>Stock Status:</b> ${stockStatus}
+💰 <b>Price:</b> ₹${validity.price.toFixed(2)} ($${priceUsd.toFixed(2)})
 
 👤 <b>Your Balance:</b> ₹${user.balance.toFixed(2)}
 ${balanceStatus}
 `.trim();
 
-  const kb = keyboards.purchaseConfirm(serviceId, validityId, validity.price, user.balance);
+  const kb = keyboards.purchaseConfirm(serviceId, validityId, validity.price, priceUsd, user.balance);
   await ctx.editMessageText(text, { parse_mode: 'HTML', reply_markup: kb });
   await ctx.answerCallbackQuery();
 }
@@ -132,7 +133,7 @@ export async function handlePurchaseConfirm(ctx: Context, serviceId: string, val
     }
 
     await ctx.editMessageText(
-      `⚠️ <b>Notice</b>\n\n${escapeHtml(result.errorMessage || 'Server is not responding. Please try again later.')}`,
+      `⚠️ <b>Notice</b>\n\n${escapeHtml(result.errorMessage || 'Server not responding. Please try again.')}`,
       {
         parse_mode: 'HTML',
         reply_markup: keyboards.backToMain()
@@ -149,7 +150,7 @@ export async function handlePurchaseConfirm(ctx: Context, serviceId: string, val
 🎉 <b>Order Successful!</b>
 
 📦 <b>Order ID:</b> <code>${order.id}</code>
-🎮 <b>Service:</b> ${escapeHtml(order.service_name)}
+🎮 <b>Product:</b> ${escapeHtml(order.service_name)}
 ⏱️ <b>Validity:</b> ${escapeHtml(order.validity_name)}
 💰 <b>Amount Paid:</b> ₹${order.price_paid.toFixed(2)}
 📅 <b>Date:</b> ${new Date(order.created_at).toLocaleString()}

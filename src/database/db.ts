@@ -180,6 +180,7 @@ export function initDatabase() {
     { key: 'brand_name', value: config.brand.storeName },
     { key: 'support_username', value: config.brand.supportUsername },
     { key: 'currency_symbol', value: config.brand.currencySymbol },
+    { key: 'usd_conversion_rate', value: '83.0' },
     { key: 'maintenance_enabled', value: 'false' },
     { key: 'maintenance_message', value: '⚠️ Store is currently under scheduled maintenance.\n\nPlease check back soon! For urgent queries, contact support.' },
     { key: 'binance_api_key', value: '' },

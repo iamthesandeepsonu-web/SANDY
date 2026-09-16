@@ -29,7 +29,7 @@ export const fulfillmentService = {
 
     const service = serviceRepo.getById(serviceId);
     if (!service || !service.is_active) {
-      return { success: false, errorCode: 'SERVICE_INACTIVE', errorMessage: 'This service is currently unavailable.' };
+      return { success: false, errorCode: 'SERVICE_INACTIVE', errorMessage: 'This product is currently unavailable.' };
     }
 
     const validity = validityRepo.getById(validityId);
@@ -47,62 +47,88 @@ export const fulfillmentService = {
 
     const orderId = 'ORD-' + Date.now().toString(36).toUpperCase() + '-' + crypto.randomBytes(3).toString('hex').toUpperCase();
 
-    // STEP 1 & 2: Check Local Stock and attempt atomic claim
-    const localStockCount = licenseRepo.getAvailableCount(serviceId, validityId);
+    // Check if this validity is mapped to an External Provider API
+    const mapping = mappingRepo.getByServiceAndValidity(serviceId, validityId);
 
-    if (localStockCount > 0) {
+    // =========================================================================
+    // CASE A: API-MAPPED PRODUCT (Strict Backup Stock Protection)
+    // =========================================================================
+    if (mapping) {
+      // Temporarily deduct balance for API order attempt
       try {
-        const order = runTransaction(() => {
-          // 1. Deduct user balance
-          userRepo.adjustBalance(
-            userId,
-            -validity.price,
-            'PURCHASE',
-            `Purchased ${service.name} (${validity.name})`,
-            orderId
-          );
+        userRepo.adjustBalance(
+          userId,
+          -validity.price,
+          'PURCHASE',
+          `Purchased ${service.name} (${validity.name}) via Provider API`,
+          orderId
+        );
+      } catch (err) {
+        return {
+          success: false,
+          errorCode: 'INSUFFICIENT_BALANCE',
+          errorMessage: 'Insufficient balance for purchase.'
+        };
+      }
 
-          // 2. Lock & Claim 1 local key
-          const claimedLicense = licenseRepo.claimOneLocalLicense(serviceId, validityId, userId, orderId);
-          if (!claimedLicense) {
-            throw new Error('LOCAL_STOCK_CONFLICT');
-          }
+      // Call External Provider API
+      const apiResult = await licenseApiService.orderProduct(mapping.external_product_id, orderId);
 
-          // 3. Create Order Record
-          return orderRepo.create({
-            id: orderId,
-            user_id: userId,
-            telegram_id: user.telegram_id,
-            service_id: service.id,
-            service_name: service.name,
-            validity_id: validity.id,
-            validity_name: validity.name,
-            price_paid: validity.price,
-            license_key: claimedLicense.license_key,
-            fulfillment_type: 'LOCAL',
-            api_tx_id: null,
-            status: 'COMPLETED'
-          });
+      if (apiResult.success && apiResult.license_key) {
+        // Successful API Fulfillment
+        const order = orderRepo.create({
+          id: orderId,
+          user_id: userId,
+          telegram_id: user.telegram_id,
+          service_id: service.id,
+          service_name: service.name,
+          validity_id: validity.id,
+          validity_name: validity.name,
+          price_paid: validity.price,
+          license_key: apiResult.license_key,
+          fulfillment_type: 'API',
+          api_tx_id: apiResult.external_tx_id || null,
+          status: 'COMPLETED'
         });
 
         return {
           success: true,
           order,
-          licenseKey: order.license_key
+          licenseKey: apiResult.license_key
         };
-      } catch (err: any) {
-        if (err.message !== 'LOCAL_STOCK_CONFLICT') {
-          return { success: false, errorCode: 'SERVER_ERROR', errorMessage: 'Transaction error occurred. Please try again.' };
-        }
-        // If conflict happened, continue to external API fallback
       }
+
+      // API Failed or is Out of Stock:
+      // STRICT RULE: Do NOT consume local backup stock! Auto-refund balance immediately!
+      userRepo.adjustBalance(
+        userId,
+        validity.price,
+        'REFUND',
+        `Auto-refund for order ${orderId} (${apiResult.error_message || 'Provider issue'})`,
+        orderId
+      );
+
+      if (apiResult.error_code === 'OUT_OF_STOCK') {
+        return {
+          success: false,
+          errorCode: 'OUT_OF_STOCK',
+          errorMessage: 'Out of Stock'
+        };
+      }
+
+      return {
+        success: false,
+        errorCode: 'SERVER_ERROR',
+        errorMessage: 'Server not responding. Please try again.'
+      };
     }
 
-    // STEP 3: Check External API Mapping for exact service_id + validity_id
-    const mapping = mappingRepo.getByServiceAndValidity(serviceId, validityId);
+    // =========================================================================
+    // CASE B: UNMAPPED / LOCAL STOCK PRODUCT
+    // =========================================================================
+    const localStockCount = licenseRepo.getAvailableCount(serviceId, validityId);
 
-    if (!mapping) {
-      // No local stock and no external API mapping
+    if (localStockCount <= 0) {
       return {
         success: false,
         errorCode: 'OUT_OF_STOCK',
@@ -110,72 +136,51 @@ export const fulfillmentService = {
       };
     }
 
-    // STEP 4: External API Fulfillment
-    // Safely deduct balance first in transaction
     try {
-      userRepo.adjustBalance(
-        userId,
-        -validity.price,
-        'PURCHASE',
-        `Purchased ${service.name} (${validity.name}) via External API`,
-        orderId
-      );
-    } catch (err) {
-      return {
-        success: false,
-        errorCode: 'INSUFFICIENT_BALANCE',
-        errorMessage: 'Insufficient balance for purchase.'
-      };
-    }
+      const order = runTransaction(() => {
+        // 1. Deduct user balance
+        userRepo.adjustBalance(
+          userId,
+          -validity.price,
+          'PURCHASE',
+          `Purchased ${service.name} (${validity.name})`,
+          orderId
+        );
 
-    // Call external LD API
-    const apiResult = await licenseApiService.orderProduct(mapping.external_product_id, orderId);
+        // 2. Lock & Claim 1 local key
+        const claimedLicense = licenseRepo.claimOneLocalLicense(serviceId, validityId, userId, orderId);
+        if (!claimedLicense) {
+          throw new Error('LOCAL_STOCK_CONFLICT');
+        }
 
-    if (apiResult.success && apiResult.license_key) {
-      // API succeeded: Record order and deliver
-      const order = orderRepo.create({
-        id: orderId,
-        user_id: userId,
-        telegram_id: user.telegram_id,
-        service_id: service.id,
-        service_name: service.name,
-        validity_id: validity.id,
-        validity_name: validity.name,
-        price_paid: validity.price,
-        license_key: apiResult.license_key,
-        fulfillment_type: 'API',
-        api_tx_id: apiResult.external_tx_id || null,
-        status: 'COMPLETED'
+        // 3. Create Order Record
+        return orderRepo.create({
+          id: orderId,
+          user_id: userId,
+          telegram_id: user.telegram_id,
+          service_id: service.id,
+          service_name: service.name,
+          validity_id: validity.id,
+          validity_name: validity.name,
+          price_paid: validity.price,
+          license_key: claimedLicense.license_key,
+          fulfillment_type: 'LOCAL',
+          api_tx_id: null,
+          status: 'COMPLETED'
+        });
       });
 
       return {
         success: true,
         order,
-        licenseKey: apiResult.license_key
+        licenseKey: order.license_key
       };
-    }
-
-    // API returned failure: Rollback user balance immediately
-    userRepo.adjustBalance(
-      userId,
-      validity.price,
-      'REFUND',
-      `Auto-refund for failed order ${orderId} (${apiResult.error_message || 'Provider issue'})`,
-      orderId
-    );
-
-    if (apiResult.error_code === 'OUT_OF_STOCK') {
+    } catch (err: any) {
       return {
         success: false,
         errorCode: 'OUT_OF_STOCK',
         errorMessage: 'Out of Stock'
       };
     }
-
-    return {
-      success: false,
-      errorCode: 'SERVER_ERROR',
-      errorMessage: 'Server is not responding. Please try again later.'
-    };
   }
 };

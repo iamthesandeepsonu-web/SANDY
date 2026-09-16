@@ -18,37 +18,34 @@ export const keyboards = {
     return new InlineKeyboard().text('← Back to Main Menu', 'menu_main');
   },
 
+  // 1. Vertical Product Display: One product directly below another
   servicesList(services: Service[]): InlineKeyboard {
     const kb = new InlineKeyboard();
-    for (let i = 0; i < services.length; i++) {
-      const srv = services[i];
-      kb.text(`✨ ${srv.name}`, `shop_srv_${srv.id}`);
-      if (i % 2 === 1) kb.row();
+    for (const srv of services) {
+      kb.text(`✨ ${srv.name}`, `shop_srv_${srv.id}`).row();
     }
-    if (services.length % 2 !== 0) kb.row();
     kb.text('← Back to Main Menu', 'menu_main');
     return kb;
   },
 
-  validitiesList(serviceId: string, validities: ValidityWithStock[]): InlineKeyboard {
+  // 2. Customer-Facing Validity Display: Shows ONLY Validity + INR Price + USD Price
+  // Zero API / technical terminology, zero stock badges on button labels
+  validitiesList(serviceId: string, validities: ValidityWithStock[], usdRate = 83.0): InlineKeyboard {
     const kb = new InlineKeyboard();
     for (const val of validities) {
-      const stockBadge = val.available_stock > 0 
-        ? `(In Stock: ${val.available_stock})` 
-        : (val.is_api_mapped ? '(Instant Auto-API)' : '(Out of Stock)');
-      
-      kb.text(`${val.name} — ₹${val.price} ${stockBadge}`, `shop_val_${serviceId}_${val.id}`).row();
+      const usdPrice = usdRate > 0 ? (val.price / usdRate).toFixed(2) : '0.00';
+      kb.text(`${val.name} | ₹${val.price} | $${usdPrice}`, `shop_val_${serviceId}_${val.id}`).row();
     }
     kb.text('← Back to Services', 'menu_shop');
     return kb;
   },
 
-  purchaseConfirm(serviceId: string, validityId: string, price: number, userBalance: number): InlineKeyboard {
+  purchaseConfirm(serviceId: string, validityId: string, priceInr: number, priceUsd: number, userBalance: number): InlineKeyboard {
     const kb = new InlineKeyboard();
-    if (userBalance >= price) {
-      kb.text(`✅ Confirm Purchase (Pay ₹${price})`, `buy_confirm_${serviceId}_${validityId}`).row();
+    if (userBalance >= priceInr) {
+      kb.text(`✅ Confirm Purchase (Pay ₹${priceInr.toFixed(2)})`, `buy_confirm_${serviceId}_${validityId}`).row();
     } else {
-      const needed = price - userBalance;
+      const needed = priceInr - userBalance;
       kb.text(`💳 Top Up Wallet (+₹${needed.toFixed(0)})`, `wallet_topup_amount_${Math.ceil(needed)}`).row();
     }
     kb.text('← Back to Validities', `shop_srv_${serviceId}`);

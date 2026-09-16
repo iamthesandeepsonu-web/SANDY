@@ -16,6 +16,7 @@ import { paymentRoutes } from './api/routes/paymentRoutes.js';
 import { paymentSettingsRoutes } from './api/routes/paymentSettingsRoutes.js';
 import { ldApiRoutes } from './api/routes/ldApiRoutes.js';
 import { maintenanceRoutes } from './api/routes/maintenanceRoutes.js';
+import { settingsRoutes } from './api/routes/settingsRoutes.js';
 import { statsRoutes } from './api/routes/statsRoutes.js';
 import { mockLdRoutes } from './api/routes/mockLdRoutes.js';
 
@@ -47,6 +48,7 @@ app.use('/api/payments', paymentRoutes);
 app.use('/api/settings/payments', paymentSettingsRoutes);
 app.use('/api/settings/ld', ldApiRoutes);
 app.use('/api/settings/maintenance', maintenanceRoutes);
+app.use('/api/settings/general', settingsRoutes);
 app.use('/api/stats', statsRoutes);
 app.use('/api/mock-ld', mockLdRoutes);
 

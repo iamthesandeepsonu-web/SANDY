@@ -248,7 +248,17 @@ async function loadOverviewData() {
 // 2. SERVICES & VALIDITIES VIEW
 async function loadServicesData() {
   try {
-    const data = await api('/services');
+    const [data, genSettings] = await Promise.all([
+      api('/services'),
+      api('/settings/general')
+    ]);
+
+    if (genSettings && genSettings.success && genSettings.settings) {
+      state.usdRate = genSettings.settings.usdRate || 83.0;
+      const rateInput = document.getElementById('input-usd-rate');
+      if (rateInput) rateInput.value = state.usdRate;
+    }
+
     if (!data.success) return;
 
     state.services = data.services;
@@ -257,19 +267,26 @@ async function loadServicesData() {
     if (state.services.length === 0) {
       container.innerHTML = `
         <div class="glass-card text-center p-5">
-          <p class="text-muted">No services created yet. Click "Add New Service" above to add your first product!</p>
+          <p class="text-muted">No products created yet. Click "Add New Product" above to add your first product!</p>
         </div>
       `;
       return;
     }
 
+    const currentUsdRate = state.usdRate || 83.0;
+
     container.innerHTML = state.services.map(srv => {
       const validitiesHtml = srv.validities && srv.validities.length > 0 
-        ? srv.validities.map(v => `
+        ? srv.validities.map(v => {
+          const usdVal = currentUsdRate > 0 ? (v.price / currentUsdRate).toFixed(2) : '0.00';
+          return `
           <tr>
             <td><strong>${escapeHtml(v.name)}</strong></td>
             <td><code>${escapeHtml(v.id)}</code></td>
-            <td><strong class="text-success">₹${v.price.toFixed(2)}</strong></td>
+            <td>
+              <strong class="text-success">₹${v.price.toFixed(2)}</strong>
+              <small class="text-muted" style="margin-left: 4px;">($${usdVal})</small>
+            </td>
             <td>
               <span class="badge ${v.available_stock > 0 ? 'badge-success' : 'badge-warning'}">
                 ${v.available_stock} Available
@@ -755,6 +772,33 @@ function setupEventListeners() {
   document.getElementById('btn-refresh-global').addEventListener('click', () => {
     loadViewData(state.currentView);
     showToast('Dashboard refreshed');
+  });
+
+  // USD Rate Form
+  document.getElementById('usd-rate-form')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const usdRate = parseFloat(document.getElementById('input-usd-rate').value);
+    if (isNaN(usdRate) || usdRate <= 0) {
+      showToast('Please enter a valid positive number for USD rate', 'error');
+      return;
+    }
+
+    try {
+      const res = await api('/settings/general', {
+        method: 'POST',
+        body: JSON.stringify({ usdRate })
+      });
+
+      if (res.success) {
+        state.usdRate = res.settings.usdRate;
+        showToast(`USD Conversion Rate updated to 1 USD = ₹${state.usdRate}!`);
+        loadServicesData();
+      } else {
+        showToast(res.message || 'Failed to update rate', 'error');
+      }
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
   });
 
   // Sidebar navigation links

@@ -224,14 +224,34 @@
           <div class="action-bar">
             <div class="action-left">
               <h2>Product & Game Catalog</h2>
-              <p>Manage services, validities, custom pricing, and stock visibility</p>
+              <p>Manage products, validity plans, custom pricing, and USD conversion</p>
             </div>
             <div class="action-right">
               <button class="btn btn-primary" id="btn-add-service">
                 <i class="fa-solid fa-plus"></i>
-                <span>Add New Service</span>
+                <span>Add New Product</span>
               </button>
             </div>
+          </div>
+
+          <!-- USD Conversion Rate Bar -->
+          <div class="glass-card" style="padding: 16px 24px; margin-bottom: 20px;">
+            <form id="usd-rate-form" style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 14px;">
+              <div style="display: flex; align-items: center; gap: 12px;">
+                <div class="stat-icon bg-amber" style="width: 40px; height: 40px; font-size: 18px;"><i class="fa-solid fa-dollar-sign"></i></div>
+                <div>
+                  <h4 style="font-size: 14px; font-weight: 700;">USD Currency Conversion Rate</h4>
+                  <p class="text-muted" style="font-size: 12px;">Auto-calculates customer-facing USD prices in Shop Now (e.g., INR Price ÷ Conversion Rate)</p>
+                </div>
+              </div>
+              <div style="display: flex; align-items: center; gap: 10px;">
+                <div style="display: flex; align-items: center; gap: 6px;">
+                  <span style="font-weight: 700; font-size: 14px;">1 USD = ₹</span>
+                  <input type="number" step="0.1" id="input-usd-rate" class="form-control" style="width: 110px; padding: 6px 10px;" placeholder="83.0" required>
+                </div>
+                <button type="submit" class="btn btn-sm btn-primary">Update Rate</button>
+              </div>
+            </form>
           </div>
 
           <div id="services-catalog-container" class="services-accordion">

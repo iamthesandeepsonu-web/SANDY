@@ -1,8 +1,8 @@
-import { db } from '../db.js';
+import { db, queryOne, queryAll } from '../db.js';
 
 export const settingsRepo = {
   get(key: string, defaultValue = ''): string {
-    const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(key) as { value: string } | undefined;
+    const row = queryOne<{ value: string }>('SELECT value FROM settings WHERE key = ?', key);
     return row ? row.value : defaultValue;
   },
 
@@ -17,8 +17,18 @@ export const settingsRepo = {
     return isNaN(num) ? defaultValue : num;
   },
 
+  getUsdRate(): number {
+    return this.getNumber('usd_conversion_rate', 83.0);
+  },
+
+  calculateUsd(inrPrice: number): number {
+    const rate = this.getUsdRate();
+    if (rate <= 0) return 0;
+    return parseFloat((inrPrice / rate).toFixed(2));
+  },
+
   getAll(): Record<string, string> {
-    const rows = db.prepare('SELECT key, value FROM settings').all() as { key: string; value: string }[];
+    const rows = queryAll<{ key: string; value: string }>('SELECT key, value FROM settings');
     const map: Record<string, string> = {};
     for (const r of rows) {
       map[r.key] = r.value;
