@@ -520,15 +520,38 @@ async function loadPaymentsData() {
 
     if (cfgRes.success) {
       if (cfgRes.binance) {
-        document.getElementById('binance-api-key').value = cfgRes.binance.apiKeyMasked || '';
-        document.getElementById('binance-merchant-id').value = cfgRes.binance.merchantId || '';
-        document.getElementById('binance-bep20').value = cfgRes.binance.bep20Address || '';
-        document.getElementById('binance-relay-url').value = cfgRes.binance.relayUrl || '';
+        const apiKeyEl = document.getElementById('binance-api-key');
+        if (apiKeyEl) apiKeyEl.value = cfgRes.binance.apiKeyMasked || '';
+        const merchEl = document.getElementById('binance-merchant-id');
+        if (merchEl) merchEl.value = cfgRes.binance.merchantId || '';
+        const bepEl = document.getElementById('binance-bep20');
+        if (bepEl) bepEl.value = cfgRes.binance.bep20Address || '';
+        const relayEl = document.getElementById('binance-relay-url');
+        if (relayEl) relayEl.value = cfgRes.binance.relayUrl || '';
       }
-      if (cfgRes.upi) {
-        document.getElementById('upi-vpa').value = cfgRes.upi.merchantVpa || '';
-        document.getElementById('upi-name').value = cfgRes.upi.merchantName || '';
-        document.getElementById('upi-secret').placeholder = cfgRes.upi.webhookSecretMasked ? `Secret: ${cfgRes.upi.webhookSecretMasked}` : 'Enter secret';
+      if (cfgRes.emailWorker) {
+        const ew = cfgRes.emailWorker;
+        const vpaEl = document.getElementById('email-upi-vpa');
+        if (vpaEl) vpaEl.value = ew.config.merchantVpa || 'iamsandeepjha@fam';
+        const nameEl = document.getElementById('email-upi-name');
+        if (nameEl) nameEl.value = ew.config.merchantName || 'SANDEEP KUMAR JHA';
+        const userEl = document.getElementById('email-upi-user');
+        if (userEl) userEl.value = ew.config.imapUser || 'iamsandeepsonu@gmail.com';
+        const timeoutEl = document.getElementById('email-upi-timeout');
+        if (timeoutEl) timeoutEl.value = ew.config.timeoutMinutes || 15;
+        const toggleEl = document.getElementById('email-upi-enabled-input');
+        if (toggleEl) toggleEl.checked = ew.config.enabled;
+
+        const badge = document.getElementById('email-worker-badge');
+        if (badge) {
+          if (ew.isRunning) {
+            badge.className = 'badge badge-success';
+            badge.innerHTML = '🟢 Running (Active)';
+          } else {
+            badge.className = 'badge badge-danger';
+            badge.innerHTML = '🔴 Stopped';
+          }
+        }
       }
     }
 
@@ -1196,9 +1219,9 @@ function setupEventListeners() {
 
   safeOn('upi-settings-form', 'submit', async (e) => {
     e.preventDefault();
-    const merchantVpa = document.getElementById('upi-vpa').value;
-    const merchantName = document.getElementById('upi-name').value;
-    const webhookSecret = document.getElementById('upi-secret').value;
+    const merchantVpa = document.getElementById('upi-vpa')?.value;
+    const merchantName = document.getElementById('upi-name')?.value;
+    const webhookSecret = document.getElementById('upi-secret')?.value;
 
     try {
       const res = await api('/settings/payments/upi', {
@@ -1206,6 +1229,99 @@ function setupEventListeners() {
         body: JSON.stringify({ merchantVpa, merchantName, webhookSecret })
       });
       showToast(res.message);
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  });
+
+  // Email UPI (IMAP Auto-Verification) Form
+  safeOn('email-upi-settings-form', 'submit', async (e) => {
+    e.preventDefault();
+    const merchantVpa = document.getElementById('email-upi-vpa')?.value.trim();
+    const merchantName = document.getElementById('email-upi-name')?.value.trim();
+    const imapUser = document.getElementById('email-upi-user')?.value.trim();
+    const imapPassword = document.getElementById('email-upi-pass')?.value.trim();
+    const timeoutMinutes = parseInt(document.getElementById('email-upi-timeout')?.value, 10);
+    const enabled = document.getElementById('email-upi-enabled-input')?.checked ?? true;
+
+    try {
+      const res = await api('/settings/payments/email-upi', {
+        method: 'POST',
+        body: JSON.stringify({
+          merchantVpa,
+          merchantName,
+          imapUser,
+          imapPassword: imapPassword || undefined,
+          timeoutMinutes: isNaN(timeoutMinutes) ? 15 : timeoutMinutes,
+          enabled
+        })
+      });
+
+      if (res.success) {
+        showToast(res.message || 'Email UPI settings saved!', 'success');
+        loadPaymentsData();
+      } else {
+        showToast(res.message || 'Failed to save settings', 'error');
+      }
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  });
+
+  // Test IMAP Connection
+  safeOn('btn-test-email-imap', 'click', async () => {
+    const resBox = document.getElementById('email-test-result');
+    const btn = document.getElementById('btn-test-email-imap');
+    if (resBox) {
+      resBox.className = 'alert alert-info';
+      resBox.textContent = '🔄 Connecting to imap.gmail.com:993...';
+      resBox.classList.remove('hidden');
+    }
+    if (btn) btn.disabled = true;
+
+    try {
+      const imapUser = document.getElementById('email-upi-user')?.value.trim();
+      const imapPassword = document.getElementById('email-upi-pass')?.value.trim();
+
+      const res = await api('/settings/payments/email-upi/test', {
+        method: 'POST',
+        body: JSON.stringify({
+          imapUser: imapUser || undefined,
+          imapPassword: imapPassword || undefined
+        })
+      });
+
+      if (resBox) {
+        if (res.success) {
+          resBox.className = 'alert alert-success';
+          resBox.innerHTML = `<strong>✅ Success:</strong> Connected & authenticated with Gmail IMAP successfully!`;
+        } else {
+          resBox.className = 'alert alert-danger';
+          resBox.innerHTML = `<strong>❌ Connection Failed:</strong> ${escapeHtml(res.message || 'Authentication error')}`;
+        }
+      }
+      showToast(res.message, res.success ? 'success' : 'error');
+    } catch (err) {
+      if (resBox) {
+        resBox.className = 'alert alert-danger';
+        resBox.innerHTML = `<strong>❌ Error:</strong> ${escapeHtml(err.message)}`;
+      }
+      showToast(err.message, 'error');
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  });
+
+  // Toggle Email UPI Worker ON/OFF
+  safeOn('email-upi-enabled-input', 'change', async (e) => {
+    const enabled = e.target.checked;
+    try {
+      const res = await api('/settings/payments/email-upi/toggle', {
+        method: 'POST',
+        body: JSON.stringify({ enabled })
+      });
+      showToast(res.message, enabled ? 'success' : 'info');
+      loadPaymentsData();
     } catch (err) {
       showToast(err.message, 'error');
     }

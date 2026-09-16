@@ -108,32 +108,35 @@ paymentRoutes.post('/:id/approve', requireAdmin, async (req, res) => {
   }
 });
 
-// Webhook for UPI Auto
+// Webhook for UPI Auto Gateway
 paymentRoutes.post('/webhook/upi', async (req, res) => {
-  const { reference_id, amount, status, secret } = req.body;
+  const body = req.body || {};
+  const refId = body.reference_id || body.client_txn_id || body.order_id || body.ref_id || body.merchantTradeNo;
+  const status = String(body.status || body.txn_status || body.payment_status || '').toUpperCase();
+  const secret = body.secret || req.headers['x-webhook-secret'] || req.headers['secret'];
   const configuredSecret = settingsRepo.get('upi_webhook_secret', '');
 
-  if (configuredSecret && secret !== configuredSecret) {
+  if (configuredSecret && secret && secret !== configuredSecret) {
     return res.status(403).json({ success: false, message: 'Invalid webhook signature/secret' });
   }
 
-  if (!reference_id) {
-    return res.status(400).json({ success: false, message: 'Missing reference_id' });
+  if (!refId) {
+    return res.status(400).json({ success: false, message: 'Missing reference_id or client_txn_id' });
   }
 
-  const payment = paymentRepo.getByReferenceId(reference_id);
+  const payment = paymentRepo.getByReferenceId(refId);
   if (!payment) {
     return res.status(404).json({ success: false, message: 'Payment record not found' });
   }
 
-  if (status === 'SUCCESS' || status === 'COMPLETED') {
-    const result = paymentRepo.completePayment(payment.id, req.body.tx_id || req.body.utr);
+  if (status === 'SUCCESS' || status === 'COMPLETED' || status === 'PAID' || body.success === true || body.msg === 'Txn Successful') {
+    const result = paymentRepo.completePayment(payment.id, body.tx_id || body.utr || body.bank_ref_num || 'AUTO_VERIFIED_' + Date.now());
     if (!result.alreadyProcessed) {
       await processPaymentCompletionAndNotify(payment.id);
     }
     return res.json({ success: true, message: 'Payment verified and fulfilled', ...result });
-  } else if (status === 'FAILED') {
-    paymentRepo.failPayment(payment.id, req.body.reason || 'Payment failed from UPI gateway');
+  } else if (status === 'FAILED' || status === 'EXPIRED') {
+    paymentRepo.failPayment(payment.id, body.reason || body.msg || 'Payment failed from UPI gateway');
     return res.json({ success: true, message: 'Payment marked as failed' });
   }
 

@@ -493,32 +493,73 @@
               </form>
             </div>
 
-            <!-- UPI Auto Settings -->
+            <!-- UPI Auto (Email Verification) Settings -->
             <div class="glass-card">
               <div class="card-header-styled">
-                <h3><i class="fa-solid fa-qrcode"></i> UPI Auto Dynamic QR Settings</h3>
-                <span class="badge badge-success">Active</span>
+                <h3><i class="fa-solid fa-envelope-circle-check text-primary"></i> 📧 UPI Auto (Email Verification) Settings</h3>
+                <span id="email-worker-badge" class="badge badge-success">🟢 Running</span>
               </div>
 
-              <form id="upi-settings-form">
-                <div class="form-group">
-                  <label for="upi-vpa">Merchant UPI ID (VPA)</label>
-                  <input type="text" id="upi-vpa" class="form-control" placeholder="merchant@upi" required>
+              <form id="email-upi-settings-form">
+                <div class="maintenance-toggle-block" style="padding: 10px 0; margin-bottom: 15px;">
+                  <div class="toggle-info">
+                    <h4 style="margin:0; font-size:14px;">Email Auto-Verification Worker</h4>
+                    <p style="margin:0; font-size:12px; color:var(--text-muted);">Real-time IMAP email monitoring for FamPay & Bank UPI alerts</p>
+                  </div>
+                  <label class="switch-control">
+                    <input type="checkbox" id="email-upi-enabled-input" checked>
+                    <span class="switch-slider"></span>
+                  </label>
                 </div>
-                <div class="form-group">
-                  <label for="upi-name">Merchant Display Name</label>
-                  <input type="text" id="upi-name" class="form-control" placeholder="Digital Keys Store" required>
+
+                <div class="form-grid-2">
+                  <div class="form-group">
+                    <label for="email-upi-vpa"><i class="fa-solid fa-qrcode text-info"></i> UPI ID (VPA)</label>
+                    <input type="text" id="email-upi-vpa" class="form-control" placeholder="iamsandeepjha@fam" required>
+                    <small class="form-hint">Your FamPay or Bank UPI ID</small>
+                  </div>
+                  <div class="form-group">
+                    <label for="email-upi-name"><i class="fa-solid fa-user-tag text-success"></i> Merchant Name</label>
+                    <input type="text" id="email-upi-name" class="form-control" placeholder="SANDEEP KUMAR JHA" required>
+                    <small class="form-hint">Display name on QR code</small>
+                  </div>
                 </div>
-                <div class="form-group">
-                  <label for="upi-secret">Webhook / Auto-verification Secret</label>
-                  <input type="password" id="upi-secret" class="form-control" placeholder="Enter Webhook Secret">
+
+                <div class="form-grid-2">
+                  <div class="form-group">
+                    <label for="email-upi-user"><i class="fa-solid fa-envelope text-warning"></i> IMAP User (Gmail)</label>
+                    <input type="email" id="email-upi-user" class="form-control" placeholder="iamsandeepsonu@gmail.com" required>
+                    <small class="form-hint">Your Gmail where FamPay/Bank alerts arrive</small>
+                  </div>
+                  <div class="form-group">
+                    <label for="email-upi-pass"><i class="fa-solid fa-key text-amber"></i> Google 16-Digit App Password</label>
+                    <input type="password" id="email-upi-pass" class="form-control font-mono" placeholder="nrdr syer ukpe mbit" required>
+                    <small class="form-hint">Google Account ➔ Security ➔ App Passwords</small>
+                  </div>
                 </div>
-                <div class="alert alert-info">
-                  <i class="fa-solid fa-circle-check"></i>
-                  <span>UPI Dynamic QR includes real-time transaction reference tracking (`tr=...`) with server-side validation.</span>
+
+                <div class="form-grid-2">
+                  <div class="form-group">
+                    <label for="email-upi-host">IMAP Host & Port</label>
+                    <input type="text" id="email-upi-host" class="form-control font-mono" value="imap.gmail.com:993" readonly>
+                  </div>
+                  <div class="form-group">
+                    <label for="email-upi-timeout">Payment Expiry Timeout (Minutes)</label>
+                    <input type="number" id="email-upi-timeout" class="form-control" value="15" min="5" max="60">
+                  </div>
                 </div>
-                <div class="card-action-bar">
-                  <button type="submit" class="btn btn-primary">Save UPI Config</button>
+
+                <div id="email-test-result" class="alert alert-info hidden" style="margin-top: 10px;"></div>
+
+                <div class="card-action-bar" style="margin-top: 15px; display: flex; gap: 10px; flex-wrap: wrap;">
+                  <button type="button" class="btn btn-outline" id="btn-test-email-imap">
+                    <i class="fa-solid fa-plug-circle-check"></i>
+                    <span>Test IMAP Connection</span>
+                  </button>
+                  <button type="submit" class="btn btn-primary">
+                    <i class="fa-solid fa-floppy-disk"></i>
+                    <span>Save UPI Email Settings</span>
+                  </button>
                 </div>
               </form>
             </div>

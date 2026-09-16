@@ -5,6 +5,7 @@ import { orderRepo } from '../../database/repositories/orderRepo.js';
 import { upiService } from '../../services/upiService.js';
 import { binancePayService } from '../../services/binancePayService.js';
 import { fulfillmentService } from '../../services/fulfillmentService.js';
+import { emailVerificationService } from '../../services/emailVerificationService.js';
 import { keyboards } from '../keyboards.js';
 import { escapeHtml } from './shopHandler.js';
 import crypto from 'crypto';
@@ -208,6 +209,14 @@ export async function handleCheckPayment(ctx: Context, paymentId: string) {
         paymentRepo.completePayment(payment.id, liveCheck.transactionId);
         payment = paymentRepo.getById(paymentId)!;
       }
+    } catch {}
+  }
+
+  // 1b. If pending and UPI Auto, trigger an immediate IMAP email inbox check
+  if (payment.status === 'PENDING' && payment.payment_method === 'UPI_AUTO') {
+    try {
+      await emailVerificationService.checkEmails();
+      payment = paymentRepo.getById(paymentId)!;
     } catch {}
   }
 

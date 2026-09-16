@@ -19,6 +19,7 @@ import { maintenanceRoutes } from './api/routes/maintenanceRoutes.js';
 import { settingsRoutes } from './api/routes/settingsRoutes.js';
 import { statsRoutes } from './api/routes/statsRoutes.js';
 import { mockLdRoutes } from './api/routes/mockLdRoutes.js';
+import { emailVerificationService } from './services/emailVerificationService.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -86,7 +87,12 @@ if (bot) {
     console.error('Failed to start Telegram bot polling:', err.message);
   });
 } else {
-  console.log('ℹ️ Bot polling skipped (configure BOT_TOKEN in .env with a live token from @BotFather to enable real-time Telegram polling).');
+  console.log('ℹ️ Bot polling skipped (configure BOT_TOKEN in .env to enable polling).');
 }
+
+// Start Email Verification Worker
+emailVerificationService.start().catch((err) => {
+  console.error('Failed to start UPI email verification worker:', err.message);
+});
 
 export { app, server };

@@ -189,18 +189,26 @@ export function initDatabase() {
     { key: 'binance_bep20_address', value: '' },
     { key: 'binance_relay_url', value: 'http://localhost:3000/api/payments/webhook/binance' },
     { key: 'binance_is_configured', value: 'false' },
-    { key: 'upi_merchant_vpa', value: 'merchant@upi' },
-    { key: 'upi_merchant_name', value: config.brand.storeName },
+    { key: 'upi_merchant_vpa', value: 'iamsandeepjha@fam' },
+    { key: 'upi_merchant_name', value: 'SANDEEP KUMAR JHA' },
     { key: 'upi_webhook_secret', value: 'upi_secret_key_123' },
     { key: 'upi_is_configured', value: 'true' },
+    { key: 'upi_email_enabled', value: 'true' },
+    { key: 'upi_imap_host', value: 'imap.gmail.com' },
+    { key: 'upi_imap_port', value: '993' },
+    { key: 'upi_imap_user', value: 'iamsandeepsonu@gmail.com' },
+    { key: 'upi_imap_password', value: 'nrdr syer ukpe mbit' },
+    { key: 'upi_payment_timeout_min', value: '15' },
     { key: 'ld_api_endpoint', value: 'https://licencedashboard.shop/api/v1' },
     { key: 'ld_api_token', value: 'ldk_ea19008d65d71e216ce765e6801d0d7684db7a8db385354e' },
     { key: 'ld_api_is_configured', value: 'true' }
   ];
 
   const insertSetting = db.prepare(`
-    INSERT OR IGNORE INTO settings (key, value, updated_at) 
+    INSERT INTO settings (key, value, updated_at) 
     VALUES (?, ?, datetime('now'))
+    ON CONFLICT(key) DO UPDATE SET value = excluded.value
+    WHERE settings.value = '' OR settings.value = 'merchant@upi' OR settings.value = 'Digital Keys Store'
   `);
 
   for (const s of defaultSettings) {
