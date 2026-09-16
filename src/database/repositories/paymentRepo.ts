@@ -106,6 +106,14 @@ export const paymentRepo = {
     `).run(reason || 'Payment failed', paymentId);
   },
 
+  updateMetadata(paymentId: string, metadata: Record<string, any>) {
+    db.prepare(`
+      UPDATE payments 
+      SET metadata = ?
+      WHERE id = ?
+    `).run(JSON.stringify(metadata), paymentId);
+  },
+
   list(filters: { userId?: string; telegramId?: number; paymentMethod?: string; status?: string; limit?: number; offset?: number }): { payments: Payment[]; total: number } {
     const limit = filters.limit || 50;
     const offset = filters.offset || 0;

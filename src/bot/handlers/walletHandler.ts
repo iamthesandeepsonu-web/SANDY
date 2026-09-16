@@ -1,9 +1,12 @@
 import { Context, InputFile } from 'grammy';
 import { userRepo } from '../../database/repositories/userRepo.js';
 import { paymentRepo } from '../../database/repositories/paymentRepo.js';
+import { orderRepo } from '../../database/repositories/orderRepo.js';
 import { upiService } from '../../services/upiService.js';
 import { binancePayService } from '../../services/binancePayService.js';
+import { fulfillmentService } from '../../services/fulfillmentService.js';
 import { keyboards } from '../keyboards.js';
+import { escapeHtml } from './shopHandler.js';
 import crypto from 'crypto';
 
 // In-memory conversation state for custom amount entry
@@ -191,16 +194,115 @@ ${orderRes.bep20Address ? `🌐 <b>BEP20 USDT Address:</b>\n<code>${orderRes.bep
 }
 
 export async function handleCheckPayment(ctx: Context, paymentId: string) {
-  const payment = paymentRepo.getById(paymentId);
+  let payment = paymentRepo.getById(paymentId);
   if (!payment) {
     await ctx.answerCallbackQuery({ text: 'Payment record not found.', show_alert: true });
     return;
   }
 
+  // 1. If pending and Binance Pay, check live Binance API
+  if (payment.status === 'PENDING' && payment.payment_method === 'BINANCE_PAY') {
+    try {
+      const liveCheck = await binancePayService.queryOrder(payment.reference_id);
+      if (liveCheck.success && (liveCheck.status === 'PAID' || liveCheck.status === 'SUCCESS')) {
+        paymentRepo.completePayment(payment.id, liveCheck.transactionId);
+        payment = paymentRepo.getById(paymentId)!;
+      }
+    } catch {}
+  }
+
+  // 2. If Payment is COMPLETED
   if (payment.status === 'COMPLETED') {
-    await ctx.answerCallbackQuery({ text: '✅ Payment has already been verified and credited!', show_alert: true });
+    let meta: any = {};
+    if (payment.metadata) {
+      try {
+        meta = typeof payment.metadata === 'string' ? JSON.parse(payment.metadata) : payment.metadata;
+      } catch {}
+    }
+
+    // Direct Product Purchase Fulfillment Flow
+    if (meta && meta.serviceId && meta.validityId) {
+      // If already fulfilled earlier
+      if (meta.orderId) {
+        const existingOrder = orderRepo.getById(meta.orderId);
+        if (existingOrder) {
+          await ctx.answerCallbackQuery({ text: '✅ Order details loaded!' });
+          const text = `
+🎉 <b>Payment Confirmed & Order Delivered!</b>
+
+📦 <b>Order ID:</b> <code>${existingOrder.id}</code>
+🎮 <b>Product:</b> ${escapeHtml(existingOrder.service_name)}
+⏳ <b>Validity:</b> ${escapeHtml(existingOrder.validity_name)}
+💰 <b>Amount Paid:</b> ₹${existingOrder.price_paid.toFixed(2)}
+
+🔑 <b>Your License Key:</b>
+<code>${escapeHtml(existingOrder.license_key)}</code>
+
+<i>💡 Tap on the license key above to copy it instantly. Save this message for your reference.</i>
+`.trim();
+          await ctx.reply(text, {
+            parse_mode: 'HTML',
+            reply_markup: keyboards.mainMenu()
+          });
+          return;
+        }
+      }
+
+      // Not yet fulfilled: execute purchase fulfillment now
+      const result = await fulfillmentService.processPurchase(payment.user_id, meta.serviceId, meta.validityId);
+
+      if (result.success && result.order) {
+        const order = result.order;
+        const licenseKey = result.licenseKey || order.license_key;
+        paymentRepo.updateMetadata(payment.id, {
+          ...meta,
+          orderId: order.id,
+          licenseKey
+        });
+
+        await ctx.answerCallbackQuery({ text: '🎉 Payment confirmed! Here is your key.' });
+        const text = `
+🎉 <b>Payment Confirmed & Order Fulfilled!</b>
+
+📦 <b>Order ID:</b> <code>${order.id}</code>
+🎮 <b>Product:</b> ${escapeHtml(order.service_name)}
+⏳ <b>Validity:</b> ${escapeHtml(order.validity_name)}
+💰 <b>Amount Paid:</b> ₹${order.price_paid.toFixed(2)}
+
+🔑 <b>Your License Key:</b>
+<code>${escapeHtml(licenseKey)}</code>
+
+<i>💡 Tap on the license key above to copy it instantly. Save this message for your reference.</i>
+`.trim();
+        await ctx.reply(text, {
+          parse_mode: 'HTML',
+          reply_markup: keyboards.mainMenu()
+        });
+        return;
+      }
+
+      // Fulfillment failed (e.g. stock exhausted after payment)
+      await ctx.answerCallbackQuery({ text: 'Payment credited to wallet.', show_alert: true });
+      const text = `
+🎉 <b>Payment Confirmed & Credited to Wallet</b>
+
+💰 <b>₹${payment.amount.toFixed(2)}</b> was added to your wallet balance.
+⚠️ <i>${escapeHtml(result.errorMessage || 'Product became out of stock during fulfillment. Your funds are 100% safe in your wallet.')}</i>
+
+You can use your wallet balance anytime via <b>🛒 Shop Now</b>!
+`.trim();
+      await ctx.reply(text, {
+        parse_mode: 'HTML',
+        reply_markup: keyboards.mainMenu()
+      });
+      return;
+    }
+
+    // Standard Wallet Top-Up Confirmation Flow
+    const user = userRepo.getById(payment.user_id);
+    await ctx.answerCallbackQuery({ text: '✅ Payment verified and credited!' });
     await ctx.reply(
-      `🎉 <b>Payment Confirmed!</b>\n\n<b>₹${payment.amount.toFixed(2)}</b> has been credited to your wallet balance.\n\nUse <b>🛒 Shop Now</b> to purchase digital keys!`,
+      `🎉 <b>Payment Confirmed!</b>\n\n<b>₹${payment.amount.toFixed(2)}</b> has been credited to your wallet balance.\n💳 <b>Current Wallet Balance:</b> ₹${user ? user.balance.toFixed(2) : payment.amount.toFixed(2)}\n\nUse <b>🛒 Shop Now</b> to purchase digital keys!`,
       {
         parse_mode: 'HTML',
         reply_markup: keyboards.mainMenu()
@@ -209,8 +311,9 @@ export async function handleCheckPayment(ctx: Context, paymentId: string) {
     return;
   }
 
+  // 3. Payment still PENDING
   await ctx.answerCallbackQuery({
-    text: '🟡 Payment is currently pending confirmation. Once detected by the gateway, your balance will update automatically.',
+    text: '🟡 Payment is pending confirmation. Once you complete the payment on your app, click this button again.',
     show_alert: true
   });
 }

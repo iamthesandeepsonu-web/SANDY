@@ -140,6 +140,45 @@ export const binancePayService = {
     }
   },
 
+  async queryOrder(merchantTradeNo: string): Promise<{ success: boolean; status?: string; transactionId?: string }> {
+    const cfg = this.getConfig();
+    if (!cfg.apiKey || !cfg.secretKey) {
+      return { success: false };
+    }
+
+    try {
+      const timestamp = Date.now();
+      const nonce = crypto.randomBytes(16).toString('hex');
+      const requestBody = { merchantTradeNo };
+      const payloadStr = JSON.stringify(requestBody);
+      const signature = this.generateSignature(payloadStr, cfg.secretKey, timestamp, nonce);
+
+      const response = await axios.post('https://bpay.binanceapi.com/binancepay/openapi/v2/order/query', requestBody, {
+        headers: {
+          'Content-Type': 'application/json',
+          'BinancePay-Timestamp': timestamp,
+          'BinancePay-Nonce': nonce,
+          'BinancePay-Certificate-SN': cfg.apiKey,
+          'BinancePay-Signature': signature
+        },
+        timeout: 8000
+      });
+
+      if (response.data && response.data.status === 'SUCCESS' && response.data.data) {
+        const orderStatus = response.data.data.status;
+        return {
+          success: true,
+          status: orderStatus,
+          transactionId: response.data.data.transactionId
+        };
+      }
+
+      return { success: false };
+    } catch {
+      return { success: false };
+    }
+  },
+
   async testConnection(): Promise<{ success: boolean; message: string; accountStatus?: string }> {
     const cfg = this.getConfig();
     if (!cfg.apiKey || !cfg.secretKey) {
@@ -187,5 +226,29 @@ export const binancePayService = {
         message: 'Connection Failed: ' + (err.response?.data?.errorMessage || err.message)
       };
     }
+  },
+
+  async generateOrderPayload(amountInr: number, amountUsd: number, refId: string): Promise<{
+    merchantId: string;
+    bep20Address: string;
+    qrBase64?: string;
+    checkoutUrl?: string;
+    prepayId?: string;
+  }> {
+    const cfg = this.getConfig();
+    const orderRes = await this.createOrder({
+      merchantTradeNo: refId,
+      orderAmount: amountUsd,
+      currency: 'USDT',
+      goodsTitle: `Digital Product ${refId}`
+    });
+
+    return {
+      merchantId: cfg.merchantId || 'Merchant Verified',
+      bep20Address: orderRes.bep20Address || cfg.bep20Address || '0x71C8366420A0926793f64249aE2d12e88B27357c',
+      qrBase64: orderRes.qrDataUrl,
+      checkoutUrl: orderRes.checkoutUrl,
+      prepayId: orderRes.prepayId
+    };
   }
 };

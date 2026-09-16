@@ -1,4 +1,4 @@
-import { Context, InputFile } from 'grammy';
+import { Context, InputFile, InlineKeyboard } from 'grammy';
 import { serviceRepo } from '../../database/repositories/serviceRepo.js';
 import { validityRepo } from '../../database/repositories/validityRepo.js';
 import { userRepo } from '../../database/repositories/userRepo.js';
@@ -244,20 +244,21 @@ export async function handlePurchaseInr(ctx: Context, serviceId: string, validit
     await ctx.answerCallbackQuery({ text: 'Processing wallet purchase...' });
   } catch {}
 
-  const user = userRepo.upsertFromTelegram(from.id, from.username, from.first_name);
-  const service = serviceRepo.getById(serviceId);
-  const validity = validityRepo.getById(validityId);
+  try {
+    const user = userRepo.upsertFromTelegram(from.id, from.username, from.first_name);
+    const service = serviceRepo.getById(serviceId);
+    const validity = validityRepo.getById(validityId);
 
-  if (!service || !validity) {
-    return handleShopMenu(ctx);
-  }
+    if (!service || !validity) {
+      return handleShopMenu(ctx);
+    }
 
-  const priceUsd = settingsRepo.calculateUsd(validity.price);
+    const priceUsd = settingsRepo.calculateUsd(validity.price);
 
-  // Balance Check
-  if (user.balance < validity.price) {
-    const diff = validity.price - user.balance;
-    const text = `
+    // Balance Check
+    if (user.balance < validity.price) {
+      const diff = validity.price - user.balance;
+      const text = `
 ❌ <b>Insufficient Wallet Balance</b>
 
 🎮 <b>Product:</b> ${escapeHtml(service.name)}
@@ -269,28 +270,38 @@ export async function handlePurchaseInr(ctx: Context, serviceId: string, validit
 Please choose a direct payment method or top up your wallet:
 `.trim();
 
-    const kb = new InlineKeyboard()
-      .text(`⚡ Pay with UPI — ₹${validity.price.toFixed(2)}`, `pay_direct_upi::${serviceId}::${validityId}`)
-      .row()
-      .text(`🟡 Pay with Binance — $${priceUsd.toFixed(2)} USDT`, `pay_direct_binance::${serviceId}::${validityId}`)
-      .row()
-      .text(`💳 Top Up Wallet (+₹${Math.ceil(diff)})`, `wallet_topup_amount_${Math.ceil(diff)}`)
-      .row()
-      .text('← Back to Validities', `shop_srv::${serviceId}`);
+      const kb = new InlineKeyboard()
+        .text(`⚡ Pay with UPI — ₹${validity.price.toFixed(2)}`, `pay_direct_upi::${serviceId}::${validityId}`)
+        .row()
+        .text(`🟡 Pay with Binance — $${priceUsd.toFixed(2)} USDT`, `pay_direct_binance::${serviceId}::${validityId}`)
+        .row()
+        .text(`💳 Top Up Wallet (+₹${Math.ceil(diff)})`, `wallet_topup_amount_${Math.ceil(diff)}`)
+        .row()
+        .text('← Back to Validities', `shop_srv::${serviceId}`);
 
-    await ctx.editMessageText(text, {
-      parse_mode: 'HTML',
-      reply_markup: kb
-    });
-    return;
-  }
+      await ctx.editMessageText(text, {
+        parse_mode: 'HTML',
+        reply_markup: kb
+      });
+      return;
+    }
 
-  const result = await fulfillmentService.processPurchase(user.id, serviceId, validityId);
+    const result = await fulfillmentService.processPurchase(user.id, serviceId, validityId);
 
-  if (!result.success) {
-    if (result.errorCode === 'OUT_OF_STOCK') {
+    if (!result.success) {
+      if (result.errorCode === 'OUT_OF_STOCK') {
+        await ctx.editMessageText(
+          `⚠️ <b>Out of Stock</b>\n\n${escapeHtml(result.errorMessage || 'Product became out of stock during fulfillment.')}\n\n<i>Your wallet balance was NOT deducted.</i>`,
+          {
+            parse_mode: 'HTML',
+            reply_markup: keyboards.backToValidities(serviceId)
+          }
+        );
+        return;
+      }
+
       await ctx.editMessageText(
-        `⚠️ <b>Out of Stock</b>\n\n${escapeHtml(result.errorMessage || 'Product became out of stock during fulfillment.')}\n\n<i>Your wallet balance was NOT deducted.</i>`,
+        `❌ <b>Purchase Failed</b>\n\n<b>Provider Response:</b>\n<code>${escapeHtml(result.errorMessage || 'Provider failed to generate license')}</code>\n\n<i>No balance was deducted. Backup stock was protected.</i>`,
         {
           parse_mode: 'HTML',
           reply_markup: keyboards.backToValidities(serviceId)
@@ -299,28 +310,21 @@ Please choose a direct payment method or top up your wallet:
       return;
     }
 
-    await ctx.editMessageText(
-      `❌ <b>Purchase Failed</b>\n\n<b>Provider Response:</b>\n<code>${escapeHtml(result.errorMessage || 'Provider failed to generate license')}</code>\n\n<i>No balance was deducted. Backup stock was protected.</i>`,
-      {
-        parse_mode: 'HTML',
-        reply_markup: keyboards.backToValidities(serviceId)
-      }
-    );
-    return;
-  }
+    // SUCCESSFUL PURCHASE
+    const order = result.order!;
+    const licenseKey = result.licenseKey || order.license_key;
+    const paidUsd = settingsRepo.calculateUsd(order.price_paid);
+    const updatedUser = userRepo.getById(user.id);
+    const currentBalance = updatedUser ? updatedUser.balance : (user.balance - order.price_paid);
 
-  // SUCCESSFUL PURCHASE
-  const order = result.order!;
-  const licenseKey = result.licenseKey || order.license_key;
-
-  const text = `
+    const text = `
 🎉 <b>Order Successful!</b>
 
 📦 <b>Order ID:</b> <code>${order.id}</code>
 🎮 <b>Product:</b> ${escapeHtml(service.name)}
 ⏳ <b>Validity:</b> ${escapeHtml(validity.name)}
-💰 <b>Amount Paid:</b> ₹${order.price_inr.toFixed(2)} ($${order.price_usd.toFixed(2)})
-💳 <b>Remaining Balance:</b> ₹${(user.balance - order.price_inr).toFixed(2)}
+💰 <b>Amount Paid:</b> ₹${order.price_paid.toFixed(2)} ($${paidUsd.toFixed(2)})
+💳 <b>Remaining Balance:</b> ₹${currentBalance.toFixed(2)}
 
 🔑 <b>Your License Key:</b>
 <code>${escapeHtml(licenseKey)}</code>
@@ -328,10 +332,19 @@ Please choose a direct payment method or top up your wallet:
 <i>💡 Tap on the license key above to copy it instantly. Save this message for your reference.</i>
 `.trim();
 
-  await ctx.editMessageText(text, {
-    parse_mode: 'HTML',
-    reply_markup: keyboards.mainMenu()
-  });
+    await ctx.editMessageText(text, {
+      parse_mode: 'HTML',
+      reply_markup: keyboards.mainMenu()
+    });
+  } catch (err: any) {
+    console.error('Error during wallet purchase:', err);
+    try {
+      await ctx.editMessageText(`❌ <b>An unexpected error occurred:</b> ${escapeHtml(err.message || 'Please try again later')}`, {
+        parse_mode: 'HTML',
+        reply_markup: keyboards.backToValidities(serviceId)
+      });
+    } catch {}
+  }
 }
 
 /**
@@ -345,30 +358,37 @@ export async function handlePurchaseDirectUpi(ctx: Context, serviceId: string, v
     await ctx.answerCallbackQuery({ text: 'Opening UPI payment...' });
   } catch {}
 
-  const user = userRepo.upsertFromTelegram(from.id, from.username, from.first_name);
-  const service = serviceRepo.getById(serviceId);
-  const validity = validityRepo.getById(validityId);
+  try {
+    const user = userRepo.upsertFromTelegram(from.id, from.username, from.first_name);
+    const service = serviceRepo.getById(serviceId);
+    const validity = validityRepo.getById(validityId);
 
-  if (!service || !validity) {
-    return handleShopMenu(ctx);
-  }
+    if (!service || !validity) {
+      return handleShopMenu(ctx);
+    }
 
-  const priceUsd = settingsRepo.calculateUsd(validity.price);
-  const refId = 'UPI' + Date.now().toString(36).toUpperCase() + crypto.randomBytes(2).toString('hex').toUpperCase();
+    const priceUsd = settingsRepo.calculateUsd(validity.price);
+    const refId = 'UPI' + Date.now().toString(36).toUpperCase() + crypto.randomBytes(2).toString('hex').toUpperCase();
 
-  const qrData = await upiService.generateUpiQr(validity.price, refId);
+    const qrData = await upiService.generateUpiQr(validity.price, refId);
 
-  const payment = paymentRepo.create({
-    user_id: user.id,
-    gateway: 'UPI_MANUAL',
-    amount: validity.price,
-    amount_usd: priceUsd,
-    reference_id: refId,
-    gateway_payload: JSON.stringify({ serviceId, validityId, productName: service.name, validityName: validity.name }),
-    status: 'PENDING'
-  });
+    const payment = paymentRepo.create({
+      userId: user.id,
+      telegramId: from.id,
+      paymentMethod: 'UPI_AUTO',
+      amount: validity.price,
+      referenceId: refId,
+      qrPayload: qrData.payload,
+      metadata: {
+        serviceId,
+        validityId,
+        productName: service.name,
+        validityName: validity.name,
+        priceUsd
+      }
+    });
 
-  const text = `
+    const text = `
 ⚡ <b>UPI Auto QR Checkout</b>
 
 🎮 <b>Product:</b> ${escapeHtml(service.name)} (${escapeHtml(validity.name)})
@@ -387,29 +407,40 @@ export async function handlePurchaseDirectUpi(ctx: Context, serviceId: string, v
 ━━━━━━━━━━━━━━━━━━━━
 `.trim();
 
-  const kb = keyboards.paymentPendingActions(payment.id);
+    const kb = keyboards.paymentPendingActions(payment.id);
 
-  try {
-    if (qrData.qrBuffer) {
-      await ctx.replyWithPhoto(new InputFile(qrData.qrBuffer, 'upi_qr.png'), {
-        caption: text,
-        parse_mode: 'HTML',
-        reply_markup: kb
-      });
-      try {
-        await ctx.deleteMessage();
-      } catch {}
-    } else {
-      await ctx.editMessageText(text, {
+    try {
+      if (qrData.qrBuffer) {
+        if (ctx.callbackQuery) {
+          try {
+            await ctx.deleteMessage();
+          } catch {}
+        }
+        await ctx.replyWithPhoto(new InputFile(qrData.qrBuffer, 'upi_qr.png'), {
+          caption: text,
+          parse_mode: 'HTML',
+          reply_markup: kb
+        });
+      } else {
+        await ctx.editMessageText(text, {
+          parse_mode: 'HTML',
+          reply_markup: kb
+        });
+      }
+    } catch {
+      await ctx.reply(text, {
         parse_mode: 'HTML',
         reply_markup: kb
       });
     }
-  } catch {
-    await ctx.editMessageText(text, {
-      parse_mode: 'HTML',
-      reply_markup: kb
-    });
+  } catch (err: any) {
+    console.error('Error generating direct UPI QR:', err);
+    try {
+      await ctx.editMessageText(`❌ <b>Failed to initiate UPI payment:</b> ${escapeHtml(err.message)}`, {
+        parse_mode: 'HTML',
+        reply_markup: keyboards.backToValidities(serviceId)
+      });
+    } catch {}
   }
 }
 
@@ -424,30 +455,39 @@ export async function handlePurchaseDirectBinance(ctx: Context, serviceId: strin
     await ctx.answerCallbackQuery({ text: 'Opening Binance Pay...' });
   } catch {}
 
-  const user = userRepo.upsertFromTelegram(from.id, from.username, from.first_name);
-  const service = serviceRepo.getById(serviceId);
-  const validity = validityRepo.getById(validityId);
+  try {
+    const user = userRepo.upsertFromTelegram(from.id, from.username, from.first_name);
+    const service = serviceRepo.getById(serviceId);
+    const validity = validityRepo.getById(validityId);
 
-  if (!service || !validity) {
-    return handleShopMenu(ctx);
-  }
+    if (!service || !validity) {
+      return handleShopMenu(ctx);
+    }
 
-  const priceUsd = settingsRepo.calculateUsd(validity.price);
-  const refId = 'BIN' + Date.now().toString(36).toUpperCase() + crypto.randomBytes(2).toString('hex').toUpperCase();
+    const priceUsd = settingsRepo.calculateUsd(validity.price);
+    const refId = 'BIN' + Date.now().toString(36).toUpperCase() + crypto.randomBytes(2).toString('hex').toUpperCase();
 
-  const binanceData = await binancePayService.generateOrderPayload(validity.price, priceUsd, refId);
+    const binanceData = await binancePayService.generateOrderPayload(validity.price, priceUsd, refId);
 
-  const payment = paymentRepo.create({
-    user_id: user.id,
-    gateway: 'BINANCE_PAY',
-    amount: validity.price,
-    amount_usd: priceUsd,
-    reference_id: refId,
-    gateway_payload: JSON.stringify({ ...binanceData, serviceId, validityId, productName: service.name, validityName: validity.name }),
-    status: 'PENDING'
-  });
+    const payment = paymentRepo.create({
+      userId: user.id,
+      telegramId: from.id,
+      paymentMethod: 'BINANCE_PAY',
+      amount: validity.price,
+      referenceId: refId,
+      qrPayload: binanceData.checkoutUrl || binanceData.prepayId,
+      metadata: {
+        serviceId,
+        validityId,
+        productName: service.name,
+        validityName: validity.name,
+        priceUsd,
+        prepayId: binanceData.prepayId,
+        bep20: binanceData.bep20Address
+      }
+    });
 
-  const text = `
+    const text = `
 🟡 <b>Binance Pay / USDT Checkout</b>
 
 🎮 <b>Product:</b> ${escapeHtml(service.name)} (${escapeHtml(validity.name)})
@@ -469,30 +509,41 @@ export async function handlePurchaseDirectBinance(ctx: Context, serviceId: strin
 ━━━━━━━━━━━━━━━━━━━━
 `.trim();
 
-  const kb = keyboards.paymentPendingActions(payment.id);
+    const kb = keyboards.paymentPendingActions(payment.id);
 
-  try {
-    if (binanceData.qrBase64) {
-      const buffer = Buffer.from(binanceData.qrBase64.replace(/^data:image\/\w+;base64,/, ''), 'base64');
-      await ctx.replyWithPhoto(new InputFile(buffer, 'binance_qr.png'), {
-        caption: text,
-        parse_mode: 'HTML',
-        reply_markup: kb
-      });
-      try {
-        await ctx.deleteMessage();
-      } catch {}
-    } else {
-      await ctx.editMessageText(text, {
+    try {
+      if (binanceData.qrBase64) {
+        const buffer = Buffer.from(binanceData.qrBase64.replace(/^data:image\/\w+;base64,/, ''), 'base64');
+        if (ctx.callbackQuery) {
+          try {
+            await ctx.deleteMessage();
+          } catch {}
+        }
+        await ctx.replyWithPhoto(new InputFile(buffer, 'binance_qr.png'), {
+          caption: text,
+          parse_mode: 'HTML',
+          reply_markup: kb
+        });
+      } else {
+        await ctx.editMessageText(text, {
+          parse_mode: 'HTML',
+          reply_markup: kb
+        });
+      }
+    } catch {
+      await ctx.reply(text, {
         parse_mode: 'HTML',
         reply_markup: kb
       });
     }
-  } catch {
-    await ctx.editMessageText(text, {
-      parse_mode: 'HTML',
-      reply_markup: kb
-    });
+  } catch (err: any) {
+    console.error('Error generating direct Binance payment:', err);
+    try {
+      await ctx.editMessageText(`❌ <b>Failed to initiate Binance payment:</b> ${escapeHtml(err.message)}`, {
+        parse_mode: 'HTML',
+        reply_markup: keyboards.backToValidities(serviceId)
+      });
+    } catch {}
   }
 }
 

@@ -69,6 +69,8 @@ function parseServiceAndValidity(data: string, prefixes: string[]): { serviceId:
   return { serviceId: raw, validityId: '' };
 }
 
+export let activeBot: Bot | null = null;
+
 export function createTelegramBot(): Bot | null {
   const token = config.bot.token;
   if (!token || !config.bot.isValidToken()) {
@@ -77,6 +79,7 @@ export function createTelegramBot(): Bot | null {
   }
 
   const bot = new Bot(token);
+  activeBot = bot;
 
   // 1. User tracking middleware
   bot.use(async (ctx, next) => {
