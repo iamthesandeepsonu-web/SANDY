@@ -1,4 +1,4 @@
-import { Bot, InlineKeyboard } from 'grammy';
+import { Bot, InlineKeyboard, GrammyError, HttpError } from 'grammy';
 import { config } from '../config/index.js';
 import { settingsRepo } from '../database/repositories/settingsRepo.js';
 import { userRepo } from '../database/repositories/userRepo.js';
@@ -243,8 +243,19 @@ export function createTelegramBot(): Bot | null {
     await ctx.answerCallbackQuery();
   });
 
-  bot.catch((err) => {
-    console.error('Telegram Bot Error:', err);
+    bot.catch((err) => {
+    const ctx = err.ctx;
+    const e = err.error;
+    if (e instanceof GrammyError) {
+      if (e.description.includes('message is not modified')) {
+        return; // Safe to ignore harmless message edit warnings
+      }
+      console.error(`⚠️ Telegram Bot API Error in update ${ctx?.update?.update_id || 'unknown'}:`, e.description);
+    } else if (e instanceof HttpError) {
+      console.error('⚠️ Telegram Network/HTTP Error:', e.message);
+    } else {
+      console.error('⚠️ Telegram Bot Error:', e);
+    }
   });
 
   return bot;
