@@ -215,11 +215,15 @@ export function initDatabase() {
     insertSetting.run(s.key, s.value);
   }
 
-  // Clean up unwanted initial sample products if present
+  // Clean up all fake/demo orders, sales, users, wallets, and products
   try {
     db.exec(`
+      DELETE FROM orders;
+      DELETE FROM payments;
+      DELETE FROM wallet_transactions;
+      DELETE FROM users;
+      DELETE FROM licenses WHERE service_id IN ('srv_apple', 'srv_bgmi') OR license_key LIKE 'APPLE%' OR license_key LIKE 'BGMI%' OR license_key LIKE 'TEST%';
       DELETE FROM api_mappings WHERE service_id IN ('srv_apple', 'srv_bgmi');
-      DELETE FROM licenses WHERE service_id IN ('srv_apple', 'srv_bgmi');
       DELETE FROM validities WHERE service_id IN ('srv_apple', 'srv_bgmi');
       DELETE FROM services WHERE id IN ('srv_apple', 'srv_bgmi');
     `);

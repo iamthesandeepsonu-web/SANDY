@@ -43,6 +43,8 @@ class EmailVerificationService {
   private processedCount: number = 0;
   private pollInterval: NodeJS.Timeout | null = null;
   private isChecking: boolean = false;
+  private processedMessageIds = new Set<string>();
+  private processedUtrs = new Set<string>();
 
   getConfig(): EmailUpiConfig {
     const enabled = settingsRepo.getBoolean('upi_email_enabled', true);
@@ -85,12 +87,15 @@ class EmailVerificationService {
     };
   }
 
-  async testConnection(): Promise<{ success: boolean; message: string; mailCount?: number }> {
+  async testConnection(testUser?: string, testPass?: string): Promise<{ success: boolean; message: string; mailCount?: number }> {
     const cfg = this.getConfig();
-    if (!cfg.imapUser || !cfg.imapPassword) {
+    const user = (testUser || cfg.imapUser).trim();
+    const pass = (testPass || cfg.imapPassword).trim().replace(/\s+/g, '');
+
+    if (!user || !pass) {
       return {
         success: false,
-        message: 'Gmail User or Google App Password is missing.'
+        message: 'Gmail User or App Password is missing.'
       };
     }
 
@@ -99,8 +104,8 @@ class EmailVerificationService {
       port: cfg.imapPort,
       secure: true,
       auth: {
-        user: cfg.imapUser,
-        pass: cfg.imapPassword
+        user,
+        pass
       },
       logger: false
     });
@@ -120,15 +125,20 @@ class EmailVerificationService {
     } catch (err: any) {
       return {
         success: false,
-        message: `🔴 IMAP Connection Failed: ${err.message || 'Invalid credentials or App Password'}`
+        message: 'IMAP Connection Failed: ' + (err.message || 'Authentication error. Verify 2-Step Verification & 16-digit App Password.')
       };
     }
   }
 
   async start() {
     const cfg = this.getConfig();
-    if (!cfg.enabled || !cfg.imapUser || !cfg.imapPassword) {
-      console.log('ℹ️ UPI Email Auto-Verification worker is not enabled or credentials incomplete.');
+    if (!cfg.enabled) {
+      console.log('📧 UPI Email Verification Worker is disabled in settings.');
+      return;
+    }
+
+    if (!cfg.imapUser || !cfg.imapPassword) {
+      console.log('⚠️ UPI Email Verification Worker: Missing IMAP credentials.');
       return;
     }
 
@@ -184,6 +194,13 @@ class EmailVerificationService {
       return;
     }
 
+    // Fetch pending UPI payments from database within timeout window
+    const pendingPayments = this.getPendingUpiPayments(cfg.timeoutMinutes);
+    if (pendingPayments.length === 0) {
+      this.isChecking = false;
+      return;
+    }
+
     const client = new ImapFlow({
       host: cfg.imapHost,
       port: cfg.imapPort,
@@ -204,48 +221,75 @@ class EmailVerificationService {
       const lock = await client.getMailboxLock('INBOX');
 
       try {
-        // Fetch recent unseen messages or messages from last 1 hour
-        const sinceDate = new Date(Date.now() - 60 * 60 * 1000);
+        // Only fetch emails from the earliest pending payment creation time (with 1 minute buffer)
+        let oldestPendingTime = Date.now() - 15 * 60 * 1000;
+        for (const p of pendingPayments) {
+          const t = new Date(p.created_at).getTime();
+          if (t < oldestPendingTime) oldestPendingTime = t;
+        }
+
+        const sinceDate = new Date(oldestPendingTime - 60 * 1000);
         const searchCriteria = { since: sinceDate };
 
-        // Fetch pending UPI payments from database within timeout window
-        const pendingPayments = this.getPendingUpiPayments(cfg.timeoutMinutes);
+        for await (const message of client.fetch(searchCriteria, { source: true, envelope: true, uid: true, flags: true })) {
+          if (!message.source) continue;
 
-        if (pendingPayments.length > 0) {
-          for await (const message of client.fetch(searchCriteria, { source: true, envelope: true, uid: true, flags: true })) {
-            if (!message.source) continue;
+          const parsed = await simpleParser(message.source);
+          const messageId = message.envelope?.messageId || parsed.messageId || `msg_${message.uid}`;
+          
+          if (this.processedMessageIds.has(messageId)) {
+            continue;
+          }
 
-            const parsed = await simpleParser(message.source);
-            const subject = parsed.subject || '';
-            const textContent = (parsed.text || '') + ' ' + (parsed.html ? parsed.html.replace(/<[^>]+>/g, ' ') : '');
-            const fromAddress = parsed.from?.text || '';
+          const messageDate = message.envelope?.date ? new Date(message.envelope.date) : (parsed.date ? new Date(parsed.date) : new Date());
+          const subject = parsed.subject || '';
+          const textContent = (parsed.text || '') + ' ' + (parsed.html ? parsed.html.replace(/<[^>]+>/g, ' ') : '');
+          const fromAddress = parsed.from?.text || '';
 
-            // Check if email looks like a payment confirmation
-            const isPaymentEmail = this.isPaymentNotification(subject, textContent, fromAddress);
+          // Check if email looks like a payment confirmation
+          const isPaymentEmail = this.isPaymentNotification(subject, textContent, fromAddress);
 
-            if (isPaymentEmail) {
-              const emailDetails = this.extractPaymentDetails(subject, textContent);
-              
-              if (emailDetails.amount > 0) {
-                // Match against pending payments
-                const matchedPayment = this.findMatchingPayment(pendingPayments, emailDetails);
-
-                if (matchedPayment) {
-                  console.log(`🎉 [UPI EMAIL WORKER] Matched Payment: ID ${matchedPayment.id}, Amount: ₹${matchedPayment.amount}, UTR: ${emailDetails.utr || 'AutoVerified'}`);
-                  
-                  // Complete payment in database
-                  const utr = emailDetails.utr || 'EMAIL_VERIFIED_' + Date.now();
-                  const completeResult = paymentRepo.completePayment(matchedPayment.id, utr);
-
-                  if (!completeResult.alreadyProcessed) {
-                    this.processedCount++;
-                    await this.fulfillAndNotify(matchedPayment.id);
-                  }
-
-                  // Remove from in-memory pending list to prevent double processing
-                  const idx = pendingPayments.findIndex(p => p.id === matchedPayment.id);
-                  if (idx !== -1) pendingPayments.splice(idx, 1);
+          if (isPaymentEmail) {
+            const emailDetails = this.extractPaymentDetails(subject, textContent);
+            
+            if (emailDetails.amount > 0) {
+              // Check if this UTR was already completed in DB
+              if (emailDetails.utr) {
+                if (this.processedUtrs.has(emailDetails.utr)) {
+                  this.processedMessageIds.add(messageId);
+                  continue;
                 }
+                const utrExists = (paymentRepo as any).getByTransactionId ? (paymentRepo as any).getByTransactionId(emailDetails.utr) : null;
+                if (utrExists && utrExists.status === 'COMPLETED') {
+                  this.processedUtrs.add(emailDetails.utr);
+                  this.processedMessageIds.add(messageId);
+                  continue;
+                }
+              }
+
+              // Match against pending payments strictly created BEFORE or AT this email time
+              const matchedPayment = this.findMatchingPayment(pendingPayments, emailDetails, messageDate);
+
+              if (matchedPayment) {
+                console.log(`🎉 [UPI EMAIL WORKER] Matched Payment: ID ${matchedPayment.id}, Amount: ₹${matchedPayment.amount}, UTR: ${emailDetails.utr || 'AutoVerified'}`);
+                
+                // Complete payment in database
+                const utr = emailDetails.utr || 'EMAIL_VERIFIED_' + Date.now();
+                const completeResult = paymentRepo.completePayment(matchedPayment.id, utr);
+
+                if (emailDetails.utr) {
+                  this.processedUtrs.add(emailDetails.utr);
+                }
+                this.processedMessageIds.add(messageId);
+
+                if (!completeResult.alreadyProcessed) {
+                  this.processedCount++;
+                  await this.fulfillAndNotify(matchedPayment.id);
+                }
+
+                // Remove from in-memory pending list to prevent double processing
+                const idx = pendingPayments.findIndex(p => p.id === matchedPayment.id);
+                if (idx !== -1) pendingPayments.splice(idx, 1);
               }
             }
           }
@@ -290,20 +334,18 @@ class EmailVerificationService {
       'trio',
       'credited',
       'received',
-      'upi',
       'payment received',
       'money received',
       'account credited',
       'inward',
       'deposit',
-      'utr',
-      'idfc',
-      'paytm',
-      'phonepe',
-      'bhim'
+      'utr'
     ];
 
-    return knownKeywords.some(kw => lowerSub.includes(kw) || lowerText.includes(kw) || lowerFrom.includes(kw));
+    const hasKeyword = knownKeywords.some(kw => lowerSub.includes(kw) || lowerText.includes(kw) || lowerFrom.includes(kw));
+    const hasAmountPattern = /(?:rs\.?|inr|₹)\s*[\d,]+|[\d,]+\s*(?:credited|received)/i.test(subject + ' ' + text);
+
+    return hasKeyword && hasAmountPattern;
   }
 
   private extractPaymentDetails(subject: string, text: string): { amount: number; utr: string | null; refId: string | null } {
@@ -347,21 +389,38 @@ class EmailVerificationService {
     return { amount, utr, refId };
   }
 
-  private findMatchingPayment(pendingPayments: Payment[], emailDetails: { amount: number; utr: string | null; refId: string | null }): Payment | null {
+  private findMatchingPayment(
+    pendingPayments: Payment[],
+    emailDetails: { amount: number; utr: string | null; refId: string | null },
+    messageDate: Date
+  ): Payment | null {
+    const emailTime = messageDate.getTime();
+
     // 1. Direct Reference ID match (if customer passed ref in remark)
     if (emailDetails.refId) {
       const refMatch = pendingPayments.find(p => p.reference_id.toUpperCase() === emailDetails.refId?.toUpperCase());
       if (refMatch) return refMatch;
     }
 
-    // 2. Exact amount match (most recent pending payment of exact amount)
-    const amountMatches = pendingPayments.filter(p => Math.abs(p.amount - emailDetails.amount) < 0.01);
-    if (amountMatches.length === 1) {
-      return amountMatches[0];
-    } else if (amountMatches.length > 1) {
-      // Sort by newest first
-      amountMatches.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-      return amountMatches[0];
+    // 2. Exact amount match - STRICT RULE:
+    // Email MUST have arrived AFTER the payment was created (with max 45s tolerance for server clock difference)
+    const validTimeMatches = pendingPayments.filter(p => {
+      const paymentCreatedTime = new Date(p.created_at).getTime();
+      const isTimeValid = emailTime >= (paymentCreatedTime - 45_000);
+      const isAmountValid = Math.abs(p.amount - emailDetails.amount) < 0.01;
+      return isTimeValid && isAmountValid;
+    });
+
+    if (validTimeMatches.length === 1) {
+      return validTimeMatches[0];
+    } else if (validTimeMatches.length > 1) {
+      // Sort by closest creation time to email timestamp
+      validTimeMatches.sort((a, b) => {
+        const diffA = Math.abs(new Date(a.created_at).getTime() - emailTime);
+        const diffB = Math.abs(new Date(b.created_at).getTime() - emailTime);
+        return diffA - diffB;
+      });
+      return validTimeMatches[0];
     }
 
     return null;
