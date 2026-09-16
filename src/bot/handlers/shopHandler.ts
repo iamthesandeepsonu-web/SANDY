@@ -234,45 +234,56 @@ ${balanceInfo}
 }
 
 /**
- * Handle Purchase with INR Balance
+ * Handle Purchase with INR Wallet Balance
  */
 export async function handlePurchaseInr(ctx: Context, serviceId: string, validityId: string) {
   const from = ctx.from;
   if (!from) return;
+
+  try {
+    await ctx.answerCallbackQuery({ text: 'Processing wallet purchase...' });
+  } catch {}
 
   const user = userRepo.upsertFromTelegram(from.id, from.username, from.first_name);
   const service = serviceRepo.getById(serviceId);
   const validity = validityRepo.getById(validityId);
 
   if (!service || !validity) {
-    await ctx.answerCallbackQuery({ text: 'Invalid product selected.', show_alert: true });
     return handleShopMenu(ctx);
   }
+
+  const priceUsd = settingsRepo.calculateUsd(validity.price);
 
   // Balance Check
   if (user.balance < validity.price) {
     const diff = validity.price - user.balance;
-    await ctx.answerCallbackQuery({ text: `Insufficient balance! Need ₹${diff.toFixed(2)} more.`, show_alert: true });
-    
     const text = `
 ❌ <b>Insufficient Wallet Balance</b>
 
-🎮 <b>Product:</b> ${escapeHtml(service.name)} (${escapeHtml(validity.name)})
-💰 <b>Price:</b> ₹${validity.price.toFixed(2)}
-💳 <b>Your Balance:</b> ₹${user.balance.toFixed(2)}
+🎮 <b>Product:</b> ${escapeHtml(service.name)}
+⏳ <b>Validity:</b> ${escapeHtml(validity.name)}
+💰 <b>Required Price:</b> ₹${validity.price.toFixed(2)} ($${priceUsd.toFixed(2)})
+💳 <b>Your Current Balance:</b> ₹${user.balance.toFixed(2)}
 ⚠️ <b>Shortage:</b> ₹${diff.toFixed(2)}
 
-Please top up your wallet using UPI Auto QR or Binance Pay below:
+Please choose a direct payment method or top up your wallet:
 `.trim();
+
+    const kb = new InlineKeyboard()
+      .text(`⚡ Pay with UPI — ₹${validity.price.toFixed(2)}`, `pay_direct_upi::${serviceId}::${validityId}`)
+      .row()
+      .text(`🟡 Pay with Binance — $${priceUsd.toFixed(2)} USDT`, `pay_direct_binance::${serviceId}::${validityId}`)
+      .row()
+      .text(`💳 Top Up Wallet (+₹${Math.ceil(diff)})`, `wallet_topup_amount_${Math.ceil(diff)}`)
+      .row()
+      .text('← Back to Validities', `shop_srv::${serviceId}`);
 
     await ctx.editMessageText(text, {
       parse_mode: 'HTML',
-      reply_markup: keyboards.paymentMethods(Math.ceil(diff))
+      reply_markup: kb
     });
     return;
   }
-
-  await ctx.answerCallbackQuery({ text: '⚡ Processing your order securely...' });
 
   const result = await fulfillmentService.processPurchase(user.id, serviceId, validityId);
 
@@ -330,12 +341,15 @@ export async function handlePurchaseDirectUpi(ctx: Context, serviceId: string, v
   const from = ctx.from;
   if (!from) return;
 
+  try {
+    await ctx.answerCallbackQuery({ text: 'Opening UPI payment...' });
+  } catch {}
+
   const user = userRepo.upsertFromTelegram(from.id, from.username, from.first_name);
   const service = serviceRepo.getById(serviceId);
   const validity = validityRepo.getById(validityId);
 
   if (!service || !validity) {
-    await ctx.answerCallbackQuery({ text: 'Invalid product selected.', show_alert: true });
     return handleShopMenu(ctx);
   }
 
@@ -368,26 +382,35 @@ export async function handlePurchaseDirectUpi(ctx: Context, serviceId: string, v
 2️⃣ Or pay directly to UPI VPA:
 <code>${qrData.vpa}</code>
 
-3️⃣ Ensure exact amount <b>₹${validity.price.toFixed(2)}</b> is entered.
+3️⃣ Ensure exact amount <b>₹${validity.price.toFixed(2)}</b> is transferred.
 4️⃣ After payment, click <b>Check Payment Status</b> below.
 ━━━━━━━━━━━━━━━━━━━━
 `.trim();
 
   const kb = keyboards.paymentPendingActions(payment.id);
 
-  if (qrData.qrBuffer) {
-    await ctx.replyWithPhoto(new InputFile(qrData.qrBuffer, 'upi_qr.png'), {
-      caption: text,
-      parse_mode: 'HTML',
-      reply_markup: kb
-    });
-  } else {
+  try {
+    if (qrData.qrBuffer) {
+      await ctx.replyWithPhoto(new InputFile(qrData.qrBuffer, 'upi_qr.png'), {
+        caption: text,
+        parse_mode: 'HTML',
+        reply_markup: kb
+      });
+      try {
+        await ctx.deleteMessage();
+      } catch {}
+    } else {
+      await ctx.editMessageText(text, {
+        parse_mode: 'HTML',
+        reply_markup: kb
+      });
+    }
+  } catch {
     await ctx.editMessageText(text, {
       parse_mode: 'HTML',
       reply_markup: kb
     });
   }
-  await ctx.answerCallbackQuery();
 }
 
 /**
@@ -397,12 +420,15 @@ export async function handlePurchaseDirectBinance(ctx: Context, serviceId: strin
   const from = ctx.from;
   if (!from) return;
 
+  try {
+    await ctx.answerCallbackQuery({ text: 'Opening Binance Pay...' });
+  } catch {}
+
   const user = userRepo.upsertFromTelegram(from.id, from.username, from.first_name);
   const service = serviceRepo.getById(serviceId);
   const validity = validityRepo.getById(validityId);
 
   if (!service || !validity) {
-    await ctx.answerCallbackQuery({ text: 'Invalid product selected.', show_alert: true });
     return handleShopMenu(ctx);
   }
 
@@ -445,20 +471,29 @@ export async function handlePurchaseDirectBinance(ctx: Context, serviceId: strin
 
   const kb = keyboards.paymentPendingActions(payment.id);
 
-  if (binanceData.qrBase64) {
-    const buffer = Buffer.from(binanceData.qrBase64.replace(/^data:image\/\w+;base64,/, ''), 'base64');
-    await ctx.replyWithPhoto(new InputFile(buffer, 'binance_qr.png'), {
-      caption: text,
-      parse_mode: 'HTML',
-      reply_markup: kb
-    });
-  } else {
+  try {
+    if (binanceData.qrBase64) {
+      const buffer = Buffer.from(binanceData.qrBase64.replace(/^data:image\/\w+;base64,/, ''), 'base64');
+      await ctx.replyWithPhoto(new InputFile(buffer, 'binance_qr.png'), {
+        caption: text,
+        parse_mode: 'HTML',
+        reply_markup: kb
+      });
+      try {
+        await ctx.deleteMessage();
+      } catch {}
+    } else {
+      await ctx.editMessageText(text, {
+        parse_mode: 'HTML',
+        reply_markup: kb
+      });
+    }
+  } catch {
     await ctx.editMessageText(text, {
       parse_mode: 'HTML',
       reply_markup: kb
     });
   }
-  await ctx.answerCallbackQuery();
 }
 
 export function escapeHtml(str: string): string {

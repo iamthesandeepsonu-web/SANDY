@@ -41,9 +41,9 @@ export const keyboards = {
   },
 
   // Payment Gateway Options after live stock confirmation:
-  // - UPI Payment Gateway
-  // - Binance Pay Gateway
-  // - Wallet Balance (if available)
+  // - 1. Pay with UPI
+  // - 2. Pay with Binance Pay
+  // - 3. Pay with Wallet Balance
   shopPaymentOptions(serviceId: string, validityId: string, priceInr: number, priceUsd: number, userBalance: number): InlineKeyboard {
     const kb = new InlineKeyboard();
     
@@ -53,10 +53,8 @@ export const keyboards = {
     // Gateway 2: Binance Pay / USDT
     kb.text(`🟡 Pay with Binance Pay — $${priceUsd.toFixed(2)} USDT`, `pay_direct_binance::${serviceId}::${validityId}`).row();
 
-    // Optional: If user has sufficient wallet credits
-    if (userBalance >= priceInr) {
-      kb.text(`💳 Pay with Wallet Balance (₹${userBalance.toFixed(2)})`, `pay_inr::${serviceId}::${validityId}`).row();
-    }
+    // Gateway 3: Pay with Wallet Balance (Always available)
+    kb.text(`💳 Pay with Wallet (Balance: ₹${userBalance.toFixed(2)})`, `pay_inr::${serviceId}::${validityId}`).row();
 
     kb.text('← Back to Validities', `shop_srv::${serviceId}`);
     return kb;
