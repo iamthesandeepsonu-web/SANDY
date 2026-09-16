@@ -1,0 +1,816 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Admin Dashboard — Telegram Shop & License Management</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <!-- Login Screen -->
+  <div id="login-view" class="auth-wrapper">
+    <div class="glass-card login-card">
+      <div class="brand-logo">
+        <div class="logo-icon"><i class="fa-solid fa-shield-halved"></i></div>
+        <h2>Admin Portal</h2>
+        <p>Telegram Shop & License Management System</p>
+      </div>
+
+      <div id="login-error" class="alert alert-danger hidden"></div>
+
+      <form id="login-form">
+        <div class="form-group">
+          <label for="username"><i class="fa-solid fa-user"></i> Username</label>
+          <input type="text" id="username" class="form-control" placeholder="admin" required autocomplete="username">
+        </div>
+        <div class="form-group">
+          <label for="password"><i class="fa-solid fa-lock"></i> Password</label>
+          <input type="password" id="password" class="form-control" placeholder="••••••••" required autocomplete="current-password">
+        </div>
+        <button type="submit" class="btn btn-primary btn-block" id="login-btn">
+          <span>Sign In to Dashboard</span>
+          <i class="fa-solid fa-arrow-right"></i>
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Main App Layout -->
+  <div id="app-layout" class="app-layout hidden">
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <div class="logo-box">
+          <i class="fa-solid fa-bolt-lightning"></i>
+        </div>
+        <div class="logo-text">
+          <h3 id="sidebar-brand-name">ALPHA STORE</h3>
+          <span>Admin Control</span>
+        </div>
+      </div>
+
+      <nav class="sidebar-nav">
+        <a href="#overview" class="nav-item active" data-view="overview">
+          <i class="fa-solid fa-chart-pie"></i>
+          <span>Overview</span>
+        </a>
+        <a href="#services" class="nav-item" data-view="services">
+          <i class="fa-solid fa-layer-group"></i>
+          <span>Services & Validities</span>
+        </a>
+        <a href="#licenses" class="nav-item" data-view="licenses">
+          <i class="fa-solid fa-key"></i>
+          <span>License Stock</span>
+        </a>
+        <a href="#ld-api" class="nav-item" data-view="ld-api">
+          <i class="fa-solid fa-network-wired"></i>
+          <span>API / License Provider</span>
+        </a>
+        <a href="#payments" class="nav-item" data-view="payments">
+          <i class="fa-solid fa-credit-card"></i>
+          <span>Payments & Gateways</span>
+        </a>
+        <a href="#orders" class="nav-item" data-view="orders">
+          <i class="fa-solid fa-boxes-stacked"></i>
+          <span>Orders & History</span>
+        </a>
+        <a href="#users" class="nav-item" data-view="users">
+          <i class="fa-solid fa-users"></i>
+          <span>Users & Wallets</span>
+        </a>
+        <a href="#maintenance" class="nav-item" data-view="maintenance">
+          <i class="fa-solid fa-screwdriver-wrench"></i>
+          <span>Maintenance Mode</span>
+        </a>
+      </nav>
+
+      <div class="sidebar-footer">
+        <div class="admin-user-info">
+          <div class="avatar"><i class="fa-solid fa-user-shield"></i></div>
+          <div class="user-meta">
+            <span class="uname" id="current-admin-name">Administrator</span>
+            <span class="urole">Full Access</span>
+          </div>
+        </div>
+        <button class="btn-logout" id="logout-btn" title="Sign Out">
+          <i class="fa-solid fa-right-from-bracket"></i>
+        </button>
+      </div>
+    </aside>
+
+    <!-- Main Content Area -->
+    <main class="main-content">
+      <!-- Top Header -->
+      <header class="top-header">
+        <div class="header-left">
+          <h1 id="page-title">Overview Dashboard</h1>
+          <span class="header-subtitle" id="page-subtitle">Real-time statistics and store operations</span>
+        </div>
+        <div class="header-right">
+          <div id="maintenance-badge" class="status-chip chip-success">
+            <span class="pulse-dot"></span>
+            <span>Store Live</span>
+          </div>
+          <div class="ld-balance-chip" id="header-ld-balance" title="External License Provider Balance">
+            <i class="fa-solid fa-wallet"></i>
+            <span>LD API: <strong id="ld-balance-val">$4,850.50</strong></span>
+          </div>
+          <button class="btn btn-outline btn-sm" id="btn-refresh-global">
+            <i class="fa-solid fa-rotate"></i>
+            <span>Refresh</span>
+          </button>
+        </div>
+      </header>
+
+      <!-- Views Container -->
+      <div class="views-container">
+        
+        <!-- 1. OVERVIEW VIEW -->
+        <section id="view-overview" class="view-panel active">
+          <!-- Metric Cards -->
+          <div class="stats-grid">
+            <div class="stat-card glass-card">
+              <div class="stat-icon bg-blue"><i class="fa-solid fa-indian-rupee-sign"></i></div>
+              <div class="stat-info">
+                <span class="stat-label">Total Revenue</span>
+                <h3 class="stat-value" id="stat-revenue">₹0.00</h3>
+              </div>
+            </div>
+
+            <div class="stat-card glass-card">
+              <div class="stat-icon bg-green"><i class="fa-solid fa-cart-shopping"></i></div>
+              <div class="stat-info">
+                <span class="stat-label">Total Orders</span>
+                <h3 class="stat-value" id="stat-orders">0</h3>
+              </div>
+            </div>
+
+            <div class="stat-card glass-card">
+              <div class="stat-icon bg-purple"><i class="fa-solid fa-users"></i></div>
+              <div class="stat-info">
+                <span class="stat-label">Registered Users</span>
+                <h3 class="stat-value" id="stat-users">0</h3>
+              </div>
+            </div>
+
+            <div class="stat-card glass-card">
+              <div class="stat-icon bg-amber"><i class="fa-solid fa-key"></i></div>
+              <div class="stat-info">
+                <span class="stat-label">Available Local Keys</span>
+                <h3 class="stat-value" id="stat-available-stock">0</h3>
+              </div>
+            </div>
+          </div>
+
+          <!-- Quick Overview Sections -->
+          <div class="overview-split-grid">
+            <!-- Recent Orders -->
+            <div class="glass-card panel-block">
+              <div class="panel-header">
+                <h3><i class="fa-solid fa-clock-rotate-left"></i> Recent Orders</h3>
+                <a href="#orders" class="link-btn">View All</a>
+              </div>
+              <div class="table-responsive">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th>Order ID</th>
+                      <th>User</th>
+                      <th>Service & Validity</th>
+                      <th>Amount</th>
+                      <th>Type</th>
+                      <th>Time</th>
+                    </tr>
+                  </thead>
+                  <tbody id="overview-recent-orders">
+                    <tr><td colspan="6" class="text-center">Loading orders...</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- Recent Top-Up Payments -->
+            <div class="glass-card panel-block">
+              <div class="panel-header">
+                <h3><i class="fa-solid fa-money-bill-transfer"></i> Recent Payments</h3>
+                <a href="#payments" class="link-btn">View All</a>
+              </div>
+              <div class="table-responsive">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th>Reference ID</th>
+                      <th>Method</th>
+                      <th>Amount</th>
+                      <th>Status</th>
+                      <th>Time</th>
+                    </tr>
+                  </thead>
+                  <tbody id="overview-recent-payments">
+                    <tr><td colspan="5" class="text-center">Loading payments...</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 2. SERVICES & VALIDITIES VIEW -->
+        <section id="view-services" class="view-panel">
+          <div class="action-bar">
+            <div class="action-left">
+              <h2>Product & Game Catalog</h2>
+              <p>Manage services, validities, custom pricing, and stock visibility</p>
+            </div>
+            <div class="action-right">
+              <button class="btn btn-primary" id="btn-add-service">
+                <i class="fa-solid fa-plus"></i>
+                <span>Add New Service</span>
+              </button>
+            </div>
+          </div>
+
+          <div id="services-catalog-container" class="services-accordion">
+            <!-- Dynamic services list -->
+          </div>
+        </section>
+
+        <!-- 3. LICENSE STOCK VIEW -->
+        <section id="view-licenses" class="view-panel">
+          <div class="action-bar">
+            <div class="action-left">
+              <h2>License Stock Management</h2>
+              <p>Add single or bulk licenses strictly tied to Service + Validity</p>
+            </div>
+            <div class="action-right">
+              <button class="btn btn-primary" id="btn-bulk-license-modal">
+                <i class="fa-solid fa-upload"></i>
+                <span>Bulk Add Licenses</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- License Filter Controls -->
+          <div class="glass-card filter-card">
+            <div class="filter-row">
+              <div class="filter-col">
+                <label>Filter by Service</label>
+                <select id="lic-filter-service" class="form-control">
+                  <option value="">All Services</option>
+                </select>
+              </div>
+              <div class="filter-col">
+                <label>Filter by Validity</label>
+                <select id="lic-filter-validity" class="form-control">
+                  <option value="">All Validities</option>
+                </select>
+              </div>
+              <div class="filter-col">
+                <label>Status</label>
+                <select id="lic-filter-status" class="form-control">
+                  <option value="">All (Available & Used)</option>
+                  <option value="0">Unused / Available Only</option>
+                  <option value="1">Used / Delivered Only</option>
+                </select>
+              </div>
+              <div class="filter-col search-col">
+                <label>Search License Key</label>
+                <div class="search-input-box">
+                  <i class="fa-solid fa-magnifying-glass"></i>
+                  <input type="text" id="lic-filter-search" class="form-control" placeholder="Search key...">
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Licenses Table -->
+          <div class="glass-card mt-4">
+            <div class="table-responsive">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>ID</th>
+                    <th>Service</th>
+                    <th>Validity</th>
+                    <th>License Key / Code</th>
+                    <th>Status</th>
+                    <th>Order Ref</th>
+                    <th>Added Date</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="licenses-table-body">
+                  <tr><td colspan="8" class="text-center">Loading license keys...</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <!-- 4. API / LICENSE PROVIDER (LD API) VIEW -->
+        <section id="view-ld-api" class="view-panel">
+          <div class="action-bar">
+            <div class="action-left">
+              <h2>License Dashboard API Integration</h2>
+              <p>Connect external license provider API and map catalog items to internal services</p>
+            </div>
+            <div class="action-right">
+              <button class="btn btn-secondary" id="btn-test-ld-connection">
+                <i class="fa-solid fa-plug"></i>
+                <span>Test Connection</span>
+              </button>
+              <button class="btn btn-primary" id="btn-fetch-ld-products">
+                <i class="fa-solid fa-cloud-arrow-down"></i>
+                <span>Fetch Provider Catalog</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Connection Status Ribbon -->
+          <div class="grid-2-col">
+            <!-- LD Settings Card -->
+            <div class="glass-card">
+              <div class="card-header-styled">
+                <h3><i class="fa-solid fa-gear"></i> API Provider Credentials</h3>
+                <span id="ld-live-status-badge" class="badge badge-warning">Checking...</span>
+              </div>
+              
+              <form id="ld-settings-form">
+                <div class="form-group">
+                  <label for="ld-endpoint-input">API Endpoint URL</label>
+                  <input type="text" id="ld-endpoint-input" class="form-control" placeholder="http://localhost:3000/api/mock-ld" required>
+                </div>
+                <div class="form-group">
+                  <label for="ld-token-input">License Dashboard API Token</label>
+                  <div class="password-input-wrap">
+                    <input type="password" id="ld-token-input" class="form-control" placeholder="Enter provider API token">
+                    <button type="button" class="btn-toggle-pwd" onclick="togglePasswordVisibility('ld-token-input')"><i class="fa-solid fa-eye"></i></button>
+                  </div>
+                  <small class="form-hint">Stored securely and never exposed to customers.</small>
+                </div>
+                <div class="card-action-bar">
+                  <button type="submit" class="btn btn-primary">Save API Configuration</button>
+                </div>
+              </form>
+            </div>
+
+            <!-- Provider Live Status & Balance -->
+            <div class="glass-card">
+              <div class="card-header-styled">
+                <h3><i class="fa-solid fa-gauge-high"></i> Provider Live Diagnostics</h3>
+                <button class="btn btn-sm btn-outline" id="btn-refresh-ld-diag"><i class="fa-solid fa-rotate"></i></button>
+              </div>
+
+              <div class="diag-info-box">
+                <div class="diag-row">
+                  <span class="diag-key">Connection Status:</span>
+                  <span class="diag-val" id="diag-ld-status">API Connected / Working</span>
+                </div>
+                <div class="diag-row">
+                  <span class="diag-key">Provider Account Balance:</span>
+                  <span class="diag-val font-bold text-success" id="diag-ld-balance">$4,850.50</span>
+                </div>
+                <div class="diag-row">
+                  <span class="diag-key">API Response Message:</span>
+                  <span class="diag-val text-muted" id="diag-ld-msg">Provider connection verified successfully.</span>
+                </div>
+              </div>
+
+              <div class="alert alert-info mt-3">
+                <i class="fa-solid fa-circle-info"></i>
+                <span><strong>Turnkey Fallback:</strong> If local stock runs out for any service mapped to the provider, the bot automatically orders and delivers the external key in real-time!</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Product Mapping Section -->
+          <div class="glass-card mt-4">
+            <div class="panel-header">
+              <div>
+                <h3><i class="fa-solid fa-diagram-project"></i> External API Product Mappings</h3>
+                <p class="panel-sub">Link internal (Service + Validity) to an external provider product ID</p>
+              </div>
+              <button class="btn btn-sm btn-primary" id="btn-create-mapping-modal">
+                <i class="fa-solid fa-link"></i>
+                <span>Map New Product</span>
+              </button>
+            </div>
+
+            <div class="table-responsive">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Internal Service</th>
+                    <th>Internal Validity</th>
+                    <th>Mapped Provider Product ID</th>
+                    <th>Provider Product Name</th>
+                    <th>Status</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="api-mappings-table-body">
+                  <tr><td colspan="6" class="text-center">Loading mappings...</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <!-- 5. PAYMENTS & GATEWAYS VIEW -->
+        <section id="view-payments" class="view-panel">
+          <div class="action-bar">
+            <div class="action-left">
+              <h2>Payment Gateways & Settings</h2>
+              <p>Configure Binance Pay, UPI Auto QR, and inspect top-up transactions</p>
+            </div>
+          </div>
+
+          <div class="grid-2-col">
+            <!-- Binance Pay Settings -->
+            <div class="glass-card">
+              <div class="card-header-styled">
+                <h3><i class="fa-brands fa-bitcoin"></i> Binance Pay Settings</h3>
+                <button class="btn btn-sm btn-secondary" id="btn-test-binance-connection">
+                  <i class="fa-solid fa-plug"></i> Test Connection
+                </button>
+              </div>
+
+              <form id="binance-settings-form">
+                <div class="form-group">
+                  <label for="binance-api-key">Binance API Key</label>
+                  <input type="text" id="binance-api-key" class="form-control" placeholder="Enter Binance Certificate / API Key">
+                </div>
+                <div class="form-group">
+                  <label for="binance-secret-key">Binance Secret Key</label>
+                  <div class="password-input-wrap">
+                    <input type="password" id="binance-secret-key" class="form-control" placeholder="Enter Secret Key">
+                    <button type="button" class="btn-toggle-pwd" onclick="togglePasswordVisibility('binance-secret-key')"><i class="fa-solid fa-eye"></i></button>
+                  </div>
+                </div>
+                <div class="form-group">
+                  <label for="binance-merchant-id">Binance PID / Merchant ID</label>
+                  <input type="text" id="binance-merchant-id" class="form-control" placeholder="e.g., 982138472">
+                </div>
+                <div class="form-group">
+                  <label for="binance-bep20">BEP-20 (USDT) Deposit Address (Fallback)</label>
+                  <input type="text" id="binance-bep20" class="form-control" placeholder="0x...">
+                </div>
+                <div class="form-group">
+                  <label for="binance-relay-url">Relay URL / Webhook Callback URL</label>
+                  <input type="text" id="binance-relay-url" class="form-control" placeholder="http://domain.com/api/payments/webhook/binance">
+                </div>
+                <div class="card-action-bar">
+                  <button type="submit" class="btn btn-primary">Save Binance Config</button>
+                </div>
+              </form>
+            </div>
+
+            <!-- UPI Auto Settings -->
+            <div class="glass-card">
+              <div class="card-header-styled">
+                <h3><i class="fa-solid fa-qrcode"></i> UPI Auto Dynamic QR Settings</h3>
+                <span class="badge badge-success">Active</span>
+              </div>
+
+              <form id="upi-settings-form">
+                <div class="form-group">
+                  <label for="upi-vpa">Merchant UPI ID (VPA)</label>
+                  <input type="text" id="upi-vpa" class="form-control" placeholder="merchant@upi" required>
+                </div>
+                <div class="form-group">
+                  <label for="upi-name">Merchant Display Name</label>
+                  <input type="text" id="upi-name" class="form-control" placeholder="Digital Keys Store" required>
+                </div>
+                <div class="form-group">
+                  <label for="upi-secret">Webhook / Auto-verification Secret</label>
+                  <input type="password" id="upi-secret" class="form-control" placeholder="Enter Webhook Secret">
+                </div>
+                <div class="alert alert-info">
+                  <i class="fa-solid fa-circle-check"></i>
+                  <span>UPI Dynamic QR includes real-time transaction reference tracking (`tr=...`) with server-side validation.</span>
+                </div>
+                <div class="card-action-bar">
+                  <button type="submit" class="btn btn-primary">Save UPI Config</button>
+                </div>
+              </form>
+            </div>
+          </div>
+
+          <!-- Top-Up Transactions Log -->
+          <div class="glass-card mt-4">
+            <div class="panel-header">
+              <h3><i class="fa-solid fa-list-check"></i> Top-Up Payment Transactions</h3>
+            </div>
+
+            <div class="table-responsive">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Ref ID</th>
+                    <th>User</th>
+                    <th>Gateway</th>
+                    <th>Amount</th>
+                    <th>Status</th>
+                    <th>Date / Time</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="payments-table-body">
+                  <tr><td colspan="7" class="text-center">Loading payment records...</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <!-- 6. ORDERS & HISTORY VIEW -->
+        <section id="view-orders" class="view-panel">
+          <div class="action-bar">
+            <div class="action-left">
+              <h2>Orders & Delivery History</h2>
+              <p>Audit and inspect all customer digital license purchases</p>
+            </div>
+          </div>
+
+          <div class="glass-card filter-card">
+            <div class="filter-row">
+              <div class="filter-col">
+                <label>Fulfillment Source</label>
+                <select id="orders-filter-type" class="form-control">
+                  <option value="">All (Local Stock & API)</option>
+                  <option value="LOCAL">Local Stock Only</option>
+                  <option value="API">External LD API Only</option>
+                </select>
+              </div>
+              <div class="filter-col search-col">
+                <label>Search Orders</label>
+                <div class="search-input-box">
+                  <i class="fa-solid fa-magnifying-glass"></i>
+                  <input type="text" id="orders-filter-search" class="form-control" placeholder="Search by Order ID, Key, Username...">
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="glass-card mt-4">
+            <div class="table-responsive">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Order ID</th>
+                    <th>Customer</th>
+                    <th>Service</th>
+                    <th>Validity</th>
+                    <th>Price</th>
+                    <th>Fulfillment</th>
+                    <th>License Key</th>
+                    <th>Date</th>
+                  </tr>
+                </thead>
+                <tbody id="orders-table-body">
+                  <tr><td colspan="8" class="text-center">Loading orders...</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <!-- 7. USERS & WALLETS VIEW -->
+        <section id="view-users" class="view-panel">
+          <div class="action-bar">
+            <div class="action-left">
+              <h2>User & Wallet Management</h2>
+              <p>Inspect user accounts, adjust wallet balances, and view transaction logs</p>
+            </div>
+          </div>
+
+          <div class="glass-card filter-card">
+            <div class="search-input-box">
+              <i class="fa-solid fa-magnifying-glass"></i>
+              <input type="text" id="users-search-input" class="form-control" placeholder="Search by Telegram User ID, Name, or Username...">
+            </div>
+          </div>
+
+          <div class="glass-card mt-4">
+            <div class="table-responsive">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Telegram ID</th>
+                    <th>Name</th>
+                    <th>Username</th>
+                    <th>Account Type</th>
+                    <th>Balance</th>
+                    <th>Orders</th>
+                    <th>Total Spent</th>
+                    <th>Joined</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="users-table-body">
+                  <tr><td colspan="9" class="text-center">Loading users...</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <!-- 8. MAINTENANCE MODE VIEW -->
+        <section id="view-maintenance" class="view-panel">
+          <div class="action-bar">
+            <div class="action-left">
+              <h2>Maintenance Mode Control</h2>
+              <p>Instantly pause customer shopping flows with custom maintenance notices</p>
+            </div>
+          </div>
+
+          <div class="glass-card max-w-700">
+            <div class="maintenance-toggle-block">
+              <div class="toggle-info">
+                <h3>Store Maintenance Status</h3>
+                <p id="maint-status-desc">When enabled, the bot displays the maintenance message and blocks store purchases.</p>
+              </div>
+              <label class="switch-control">
+                <input type="checkbox" id="maintenance-toggle-input">
+                <span class="switch-slider"></span>
+              </label>
+            </div>
+
+            <hr class="card-divider">
+
+            <form id="maintenance-form">
+              <div class="form-group">
+                <label for="maintenance-msg-input">Customer Maintenance Notice Message</label>
+                <textarea id="maintenance-msg-input" class="form-control" rows="5" placeholder="Enter maintenance message..."></textarea>
+                <small class="form-hint">Supports emojis and multiple lines.</small>
+              </div>
+
+              <div class="card-action-bar">
+                <button type="submit" class="btn btn-primary">Save Maintenance Settings</button>
+              </div>
+            </form>
+          </div>
+        </section>
+
+      </div>
+    </main>
+  </div>
+
+  <!-- Modals -->
+  <!-- 1. Add/Edit Service Modal -->
+  <div id="modal-service" class="modal-overlay hidden">
+    <div class="modal-dialog glass-card">
+      <div class="modal-header">
+        <h3 id="modal-service-title">Add New Service</h3>
+        <button class="btn-close-modal" onclick="closeModal('modal-service')"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      <form id="form-service">
+        <input type="hidden" id="service-is-edit" value="0">
+        <div class="form-group">
+          <label for="service-id-input">Unique Service ID</label>
+          <input type="text" id="service-id-input" class="form-control" placeholder="e.g., srv_apple" required>
+        </div>
+        <div class="form-group">
+          <label for="service-name-input">Service Display Name</label>
+          <input type="text" id="service-name-input" class="form-control" placeholder="e.g., Apple VIP" required>
+        </div>
+        <div class="form-group">
+          <label for="service-desc-input">Description (Optional)</label>
+          <input type="text" id="service-desc-input" class="form-control" placeholder="Short description of the product">
+        </div>
+        <div class="form-group">
+          <label for="service-active-input">Visibility Status</label>
+          <select id="service-active-input" class="form-control">
+            <option value="1">Active & Visible in Bot</option>
+            <option value="0">Disabled / Hidden</option>
+          </select>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" onclick="closeModal('modal-service')">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save Service</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- 2. Add/Edit Validity Modal -->
+  <div id="modal-validity" class="modal-overlay hidden">
+    <div class="modal-dialog glass-card">
+      <div class="modal-header">
+        <h3 id="modal-validity-title">Add Validity Duration</h3>
+        <button class="btn-close-modal" onclick="closeModal('modal-validity')"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      <form id="form-validity">
+        <input type="hidden" id="val-service-id" value="">
+        <input type="hidden" id="val-is-edit" value="0">
+        <input type="hidden" id="val-id-edit" value="">
+        
+        <div class="form-group">
+          <label for="val-name-input">Validity Name</label>
+          <input type="text" id="val-name-input" class="form-control" placeholder="e.g., 1 Day, 7 Days, 30 Days" required>
+        </div>
+        <div class="form-group">
+          <label for="val-price-input">Price (₹)</label>
+          <input type="number" step="0.01" id="val-price-input" class="form-control" placeholder="450" required>
+        </div>
+        <div class="form-group">
+          <label for="val-active-input">Status</label>
+          <select id="val-active-input" class="form-control">
+            <option value="1">Active & Purchasable</option>
+            <option value="0">Inactive</option>
+          </select>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" onclick="closeModal('modal-validity')">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save Validity</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- 3. Bulk Add Licenses Modal -->
+  <div id="modal-bulk-license" class="modal-overlay hidden">
+    <div class="modal-dialog glass-card">
+      <div class="modal-header">
+        <h3>Bulk Add License Keys</h3>
+        <button class="btn-close-modal" onclick="closeModal('modal-bulk-license')"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      <form id="form-bulk-license">
+        <div class="form-group">
+          <label for="bulk-service-select">Select Service</label>
+          <select id="bulk-service-select" class="form-control" required></select>
+        </div>
+        <div class="form-group">
+          <label for="bulk-validity-select">Select Validity</label>
+          <select id="bulk-validity-select" class="form-control" required></select>
+        </div>
+        <div class="form-group">
+          <label for="bulk-keys-textarea">License Keys (One key per line)</label>
+          <textarea id="bulk-keys-textarea" class="form-control" rows="8" placeholder="XXXX-YYYY-ZZZZ-1111&#10;XXXX-YYYY-ZZZZ-2222&#10;XXXX-YYYY-ZZZZ-3333" required></textarea>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" onclick="closeModal('modal-bulk-license')">Cancel</button>
+          <button type="submit" class="btn btn-primary">Upload Keys</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- 4. Create API Mapping Modal -->
+  <div id="modal-mapping" class="modal-overlay hidden">
+    <div class="modal-dialog glass-card">
+      <div class="modal-header">
+        <h3>Map Product to External API</h3>
+        <button class="btn-close-modal" onclick="closeModal('modal-mapping')"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      <form id="form-mapping">
+        <div class="form-group">
+          <label for="map-service-select">Internal Service</label>
+          <select id="map-service-select" class="form-control" required></select>
+        </div>
+        <div class="form-group">
+          <label for="map-validity-select">Internal Validity</label>
+          <select id="map-validity-select" class="form-control" required></select>
+        </div>
+        <div class="form-group">
+          <label for="map-provider-product-select">External Provider Product</label>
+          <select id="map-provider-product-select" class="form-control" required>
+            <option value="">-- Select from Provider Catalog --</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="map-external-id-custom">Or Enter Custom Provider Product ID</label>
+          <input type="text" id="map-external-id-custom" class="form-control" placeholder="e.g., LD_PROD_APPLE_7D">
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" onclick="closeModal('modal-mapping')">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save Mapping</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- 5. User Details & Balance Adjust Modal -->
+  <div id="modal-user-detail" class="modal-overlay hidden">
+    <div class="modal-dialog glass-card modal-lg">
+      <div class="modal-header">
+        <h3 id="modal-user-name">User Account Details</h3>
+        <button class="btn-close-modal" onclick="closeModal('modal-user-detail')"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      
+      <div class="user-detail-content" id="user-detail-body">
+        <!-- Dynamic User Data -->
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Notification Container -->
+  <div id="toast-container" class="toast-container"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
