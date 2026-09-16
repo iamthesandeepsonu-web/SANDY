@@ -167,7 +167,8 @@ function switchView(viewName) {
     orders: { title: 'Orders & Fulfillment History', sub: 'Audit and inspect all customer digital license purchases' },
     users: { title: 'User & Wallet Management', sub: 'Search users, inspect balances, adjust credits, and view history' },
     maintenance: { title: 'Maintenance Mode', sub: 'Instantly pause shopping flows with custom notice messages' },
-    backups: { title: 'Backup & Restore Management', sub: 'Automated 12:01 AM IST backups, Telegram delivery & disaster recovery' }
+    backups: { title: 'Backup & Restore Management', sub: 'Automated 12:01 AM IST backups, Telegram delivery & disaster recovery' },
+    broadcasts: { title: 'Mass Broadcast & Inventory Alerts', sub: 'Compose promotional messages with instant preview and manage stock alerts' }
   };
 
   const meta = titles[viewName] || { title: 'Admin Dashboard', sub: '' };
@@ -206,6 +207,9 @@ function loadViewData(viewName) {
       break;
     case 'backups':
       loadBackupsData();
+      break;
+    case 'broadcasts':
+      loadBroadcastsData();
       break;
     case 'support':
       loadSupportData();
@@ -1549,6 +1553,304 @@ function setupEventListeners() {
   }
 
   safeOn('btn-submit-upload-restore', 'click', handleUploadRestoreClick);
+
+  // Broadcast & Marketing Events
+  safeOn('btn-refresh-broadcasts', 'click', loadBroadcastsData);
+  safeOn('btn-test-broadcast', 'click', handleTestBroadcast);
+  safeOn('btn-audit-stock', 'click', handleAuditStock);
+
+  const bcInputs = ['bc-message-input', 'bc-photo-url-input', 'bc-btn-text-input', 'bc-btn-url-input'];
+  bcInputs.forEach(id => safeOn(id, 'input', updateBroadcastLivePreview));
+
+  safeOn('btn-template-promo', 'click', () => {
+    const msgEl = document.getElementById('bc-message-input');
+    const photoEl = document.getElementById('bc-photo-url-input');
+    const btnTextEl = document.getElementById('bc-btn-text-input');
+    const btnUrlEl = document.getElementById('bc-btn-url-input');
+
+    if (msgEl) msgEl.value = `🔥 <b>WEEKEND FLASH SALE IS LIVE!</b>\n\nGet <b>30% OFF</b> on all VIP Digital License Keys!\n\n⚡ <i>Instant Delivery</i>\n🔒 <i>100% Stock Protection</i>\n\n👉 <b>Tap below to grab your key now!</b>`;
+    if (photoEl) photoEl.value = 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=800';
+    if (btnTextEl) btnTextEl.value = '🛒 Claim Discount Now';
+    if (btnUrlEl) btnUrlEl.value = 'https://t.me/sandy69services_bot?start=shop';
+    updateBroadcastLivePreview();
+    showToast('Promo template loaded!');
+  });
+
+  safeOn('btn-template-stock', 'click', () => {
+    const msgEl = document.getElementById('bc-message-input');
+    const photoEl = document.getElementById('bc-photo-url-input');
+    const btnTextEl = document.getElementById('bc-btn-text-input');
+    const btnUrlEl = document.getElementById('bc-btn-url-input');
+
+    if (msgEl) msgEl.value = `⚡ <b>NEW STOCK REFILL ALERT!</b>\n\nFresh stock of VIP License Keys has just been added!\n\n🎮 <b>Products:</b> Apple VIP, BGMI, Free Fire\n🚀 <b>Delivery:</b> Instant Delivery within 2 seconds!\n\n<i>Order now before stock runs out!</i>`;
+    if (photoEl) photoEl.value = '';
+    if (btnTextEl) btnTextEl.value = '⚡ Buy License Key';
+    if (btnUrlEl) btnUrlEl.value = 'https://t.me/sandy69services_bot?start=shop';
+    updateBroadcastLivePreview();
+    showToast('Stock refill template loaded!');
+  });
+
+  safeOn('form-broadcast', 'submit', handleSendBroadcast);
+  safeOn('form-stock-settings', 'submit', handleSaveStockAlertSettings);
+}
+
+// ----------------------------------------------------
+// BROADCAST & MARKETING MODULE
+// ----------------------------------------------------
+function updateBroadcastLivePreview() {
+  const message = document.getElementById('bc-message-input')?.value || '';
+  const photoUrl = document.getElementById('bc-photo-url-input')?.value.trim() || '';
+  const btnText = document.getElementById('bc-btn-text-input')?.value.trim() || '';
+
+  const previewText = document.getElementById('preview-text');
+  const previewPhoto = document.getElementById('preview-photo');
+  const previewBtnWrap = document.getElementById('preview-button-wrap');
+  const previewBtnLabel = document.getElementById('preview-button-label');
+
+  if (previewText) {
+    if (message.trim()) {
+      previewText.innerHTML = message;
+    } else {
+      previewText.textContent = 'Your message preview will appear here in real-time...';
+    }
+  }
+
+  if (previewPhoto) {
+    if (photoUrl) {
+      previewPhoto.src = photoUrl;
+      previewPhoto.style.display = 'block';
+    } else {
+      previewPhoto.style.display = 'none';
+      previewPhoto.src = '';
+    }
+  }
+
+  if (previewBtnWrap && previewBtnLabel) {
+    if (btnText) {
+      previewBtnLabel.textContent = btnText;
+      previewBtnWrap.style.display = 'block';
+    } else {
+      previewBtnWrap.style.display = 'none';
+    }
+  }
+}
+
+async function loadBroadcastsData() {
+  const tbody = document.getElementById('broadcasts-table-body');
+  if (tbody) {
+    tbody.innerHTML = '<tr><td colspan="8" style="text-align: center; color: #94a3b8; padding: 25px;"><i class="fa-solid fa-spinner fa-spin"></i> Loading broadcast history...</td></tr>';
+  }
+
+  try {
+    const [historyRes, auditRes, usersRes] = await Promise.all([
+      api('/broadcasts/history'),
+      api('/broadcasts/stock-alerts/audit'),
+      api('/users?limit=1')
+    ]);
+
+    // 1. Update audience count
+    const totalUsers = usersRes.total || (usersRes.users ? usersRes.users.length : 0);
+    document.getElementById('bc-total-users').textContent = totalUsers.toLocaleString();
+
+    // 2. Update stock alerts stats
+    if (auditRes.success) {
+      const isEnabled = auditRes.enabled;
+      const threshold = auditRes.threshold || 2;
+      const lowStockItems = (auditRes.items || []).filter(i => i.needsAlert);
+
+      document.getElementById('bc-alert-status').textContent = isEnabled ? 'Active' : 'Disabled';
+      document.getElementById('bc-alert-status').style.color = isEnabled ? '#10b981' : '#94a3b8';
+      document.getElementById('bc-alert-threshold-text').textContent = `Threshold: \u2264 ${threshold} keys`;
+      document.getElementById('bc-low-stock-count').textContent = lowStockItems.length;
+
+      const thresholdInput = document.getElementById('stock-threshold-input');
+      const toggleInput = document.getElementById('stock-alerts-enabled-input');
+      if (thresholdInput) thresholdInput.value = threshold;
+      if (toggleInput) toggleInput.checked = isEnabled;
+    }
+
+    // 3. Render campaigns history
+    if (historyRes.success) {
+      const history = historyRes.history || [];
+      document.getElementById('bc-total-campaigns').textContent = history.length;
+      document.getElementById('bc-history-count').textContent = `${history.length} Campaigns`;
+
+      if (tbody) {
+        if (history.length === 0) {
+          tbody.innerHTML = `
+            <tr>
+              <td colspan="8" style="text-align: center; color: #94a3b8; padding: 30px;">
+                <i class="fa-solid fa-paper-plane" style="font-size: 2rem; margin-bottom: 8px; display: block; opacity: 0.5;"></i>
+                No promotional broadcasts sent yet. Compose your first announcement above!
+              </td>
+            </tr>
+          `;
+        } else {
+          tbody.innerHTML = history.map(c => {
+            const successRate = c.total_targets > 0 
+              ? ((c.sent_count / c.total_targets) * 100).toFixed(0) + '%' 
+              : '100%';
+
+            return `
+              <tr>
+                <td><small style="color: #cbd5e1;">${formatISTDate(c.created_at)}</small></td>
+                <td>
+                  <span style="font-size: 0.85rem; max-width: 250px; display: inline-block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                    ${escapeHtml(c.message.slice(0, 60))}...
+                  </span>
+                </td>
+                <td><strong>${c.total_targets}</strong></td>
+                <td><span class="badge badge-success">${c.sent_count} sent</span></td>
+                <td><span class="badge ${c.failed_count > 0 ? 'badge-danger' : 'badge-info'}">${c.failed_count}</span></td>
+                <td><strong>${successRate}</strong></td>
+                <td><small class="text-muted">${escapeHtml(c.created_by || 'Admin')}</small></td>
+                <td><span class="status-chip chip-success" style="font-size: 0.75rem; padding: 2px 8px;">COMPLETED</span></td>
+              </tr>
+            `;
+          }).join('');
+        }
+      }
+    }
+  } catch (err) {
+    console.error('Failed to load broadcasts data:', err);
+    if (tbody) {
+      tbody.innerHTML = `<tr><td colspan="8" style="text-align: center; color: #ef4444; padding: 20px;">Failed to load broadcasts: ${escapeHtml(err.message)}</td></tr>`;
+    }
+  }
+}
+
+async function handleTestBroadcast() {
+  const message = document.getElementById('bc-message-input')?.value || '';
+  const photoUrl = document.getElementById('bc-photo-url-input')?.value.trim() || undefined;
+  const buttonText = document.getElementById('bc-btn-text-input')?.value.trim() || undefined;
+  const buttonUrl = document.getElementById('bc-btn-url-input')?.value.trim() || undefined;
+
+  if (!message.trim()) {
+    showToast('Please type a broadcast message first.', 'error');
+    return;
+  }
+
+  const btn = document.getElementById('btn-test-broadcast');
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Sending Test...';
+  }
+
+  try {
+    const res = await api('/broadcasts/test', {
+      method: 'POST',
+      body: JSON.stringify({ message, photoUrl, buttonText, buttonUrl })
+    });
+
+    if (res.success) {
+      showToast(res.message || '✅ Test broadcast delivered to your Admin Telegram!', 'success');
+    } else {
+      showToast(res.message || 'Failed to send test preview.', 'error');
+    }
+  } catch (err) {
+    showToast(err.message, 'error');
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = '<i class="fa-solid fa-vial"></i> Send Test to Admin';
+    }
+  }
+}
+
+async function handleSendBroadcast(e) {
+  e.preventDefault();
+
+  const message = document.getElementById('bc-message-input')?.value || '';
+  const photoUrl = document.getElementById('bc-photo-url-input')?.value.trim() || undefined;
+  const buttonText = document.getElementById('bc-btn-text-input')?.value.trim() || undefined;
+  const buttonUrl = document.getElementById('bc-btn-url-input')?.value.trim() || undefined;
+
+  if (!message.trim()) {
+    showToast('Please enter a message to broadcast.', 'error');
+    return;
+  }
+
+  if (!confirm('Are you sure you want to send this mass broadcast to ALL registered Telegram bot users?')) {
+    return;
+  }
+
+  const btn = document.getElementById('btn-send-broadcast');
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Blasting Broadcast...';
+  }
+
+  try {
+    showToast('🚀 Blasting mass broadcast to all users...', 'info');
+    const res = await api('/broadcasts/send', {
+      method: 'POST',
+      body: JSON.stringify({ message, photoUrl, buttonText, buttonUrl })
+    });
+
+    if (res.success) {
+      showToast(res.message || '🎉 Broadcast completed successfully!', 'success');
+      loadBroadcastsData();
+    } else {
+      showToast(res.message || 'Broadcast failed.', 'error');
+    }
+  } catch (err) {
+    showToast(err.message, 'error');
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = '<i class="fa-solid fa-rocket"></i> Send Mass Broadcast to All Users';
+    }
+  }
+}
+
+async function handleSaveStockAlertSettings(e) {
+  e.preventDefault();
+  const threshold = document.getElementById('stock-threshold-input')?.value;
+  const enabled = document.getElementById('stock-alerts-enabled-input')?.checked;
+
+  try {
+    const res = await api('/broadcasts/stock-alerts/settings', {
+      method: 'POST',
+      body: JSON.stringify({ threshold, enabled })
+    });
+
+    if (res.success) {
+      showToast(res.message || 'Stock alert settings saved!', 'success');
+      loadBroadcastsData();
+    } else {
+      showToast(res.message || 'Failed to save settings.', 'error');
+    }
+  } catch (err) {
+    showToast(err.message, 'error');
+  }
+}
+
+async function handleAuditStock() {
+  const btn = document.getElementById('btn-audit-stock');
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Auditing...';
+  }
+
+  try {
+    const res = await api('/broadcasts/stock-alerts/audit');
+    if (res.success) {
+      const low = (res.items || []).filter(i => i.needsAlert);
+      if (low.length === 0) {
+        showToast('✅ All products have sufficient inventory!', 'success');
+      } else {
+        showToast(`⚠️ ${low.length} product plan(s) are at or below threshold! Alert sent to Admin.`, 'warning');
+      }
+      loadBroadcastsData();
+    }
+  } catch (err) {
+    showToast(err.message, 'error');
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = '<i class="fa-solid fa-magnifying-glass"></i> Audit Stock';
+    }
+  }
 }
 
 // ----------------------------------------------------

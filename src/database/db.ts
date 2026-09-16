@@ -186,6 +186,22 @@ export function initDatabase() {
     );
 
     CREATE INDEX IF NOT EXISTS idx_backup_audit_time ON backup_audit_logs(created_at);
+
+    CREATE TABLE IF NOT EXISTS broadcast_campaigns (
+      id TEXT PRIMARY KEY,
+      message TEXT NOT NULL,
+      photo_url TEXT,
+      button_text TEXT,
+      button_url TEXT,
+      total_targets INTEGER DEFAULT 0,
+      sent_count INTEGER DEFAULT 0,
+      failed_count INTEGER DEFAULT 0,
+      status TEXT DEFAULT 'COMPLETED', -- 'IN_PROGRESS', 'COMPLETED', 'FAILED'
+      created_by TEXT DEFAULT 'admin',
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_broadcasts_created ON broadcast_campaigns(created_at);
   `);
 
   // Default system settings
@@ -196,6 +212,8 @@ export function initDatabase() {
     { key: 'usd_conversion_rate', value: '83.0' },
     { key: 'maintenance_enabled', value: 'false' },
     { key: 'maintenance_message', value: '⚠️ Store is currently under scheduled maintenance.\n\nPlease check back soon! For urgent queries, contact support.' },
+    { key: 'low_stock_threshold', value: '2' },
+    { key: 'low_stock_alerts_enabled', value: 'true' },
     { key: 'binance_api_key', value: 'R64c3ZFYaykmHXyk29VphrMpUovbdl0CxILGmssfoMYsfOKG9mL6iGpAm2XX9rsE' },
     { key: 'binance_secret_key', value: 'Ym8WJpIZCoDb2mejQ0vfGvxHoc6QgCxiNbJRBbvThsTOOBhfJWQzlsuCeVsI9v5Z' },
     { key: 'binance_merchant_id', value: '433230697' },

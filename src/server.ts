@@ -20,6 +20,7 @@ import { settingsRoutes } from './api/routes/settingsRoutes.js';
 import { statsRoutes } from './api/routes/statsRoutes.js';
 import { mockLdRoutes } from './api/routes/mockLdRoutes.js';
 import { backupRoutes } from './api/routes/backupRoutes.js';
+import { broadcastRoutes } from './api/routes/broadcastRoutes.js';
 import { emailVerificationService } from './services/emailVerificationService.js';
 import { backupService } from './services/backupService.js';
 
@@ -56,6 +57,7 @@ app.use('/api/settings', settingsRoutes);
 app.use('/api/stats', statsRoutes);
 app.use('/api/mock-ld', mockLdRoutes);
 app.use('/api/backups', backupRoutes);
+app.use('/api/broadcasts', broadcastRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {

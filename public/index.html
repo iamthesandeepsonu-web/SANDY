@@ -90,6 +90,10 @@
           <i class="fa-solid fa-shield-halved"></i>
           <span>Backup & Restore</span>
         </a>
+        <a href="#broadcasts" class="nav-item" data-view="broadcasts">
+          <i class="fa-solid fa-bullhorn"></i>
+          <span>Broadcast & Alerts</span>
+        </a>
         <a href="#support" class="nav-item" data-view="support">
           <i class="fa-solid fa-headset"></i>
           <span>Support & Settings</span>
@@ -1034,6 +1038,216 @@
                   <tr>
                     <td colspan="6" style="text-align: center; color: #94a3b8; padding: 20px;">
                       No audit events recorded yet.
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+        </section>
+
+        <!-- 10. BROADCAST & MARKETING VIEW -->
+        <section id="view-broadcasts" class="view-panel">
+          <!-- Metric Cards -->
+          <div class="stats-grid">
+            <div class="stat-card glass-card">
+              <div class="stat-icon icon-primary"><i class="fa-solid fa-users"></i></div>
+              <div class="stat-info">
+                <span class="stat-title">Target Audience</span>
+                <span class="stat-value" id="bc-total-users">0</span>
+                <span class="stat-subtext">Registered Bot Users</span>
+              </div>
+            </div>
+
+            <div class="stat-card glass-card">
+              <div class="stat-icon icon-success"><i class="fa-solid fa-paper-plane"></i></div>
+              <div class="stat-info">
+                <span class="stat-title">Total Broadcasts</span>
+                <span class="stat-value" id="bc-total-campaigns">0</span>
+                <span class="stat-subtext">Promotions Delivered</span>
+              </div>
+            </div>
+
+            <div class="stat-card glass-card">
+              <div class="stat-icon icon-warning"><i class="fa-solid fa-bell"></i></div>
+              <div class="stat-info">
+                <span class="stat-title">Low-Stock Alert</span>
+                <span class="stat-value" id="bc-alert-status">Active</span>
+                <span class="stat-subtext" id="bc-alert-threshold-text">Threshold: &le; 2 keys</span>
+              </div>
+            </div>
+
+            <div class="stat-card glass-card">
+              <div class="stat-icon icon-danger"><i class="fa-solid fa-boxes-packing"></i></div>
+              <div class="stat-info">
+                <span class="stat-title">Low Stock Products</span>
+                <span class="stat-value" id="bc-low-stock-count">0</span>
+                <span class="stat-subtext">Need Inventory Refill</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Quick Actions & Title -->
+          <div class="panel-header" style="margin-top: 24px; margin-bottom: 16px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+            <div>
+              <h2 style="margin: 0; font-size: 1.3rem;"><i class="fa-solid fa-bullhorn text-primary"></i> Mass Broadcast & Marketing Hub</h2>
+              <p style="margin: 4px 0 0 0; color: #94a3b8; font-size: 0.88rem;">Send rich promotional offers to all customers with rate-limiting & monitor inventory stock levels in real-time.</p>
+            </div>
+            <div style="display: flex; gap: 10px;">
+              <button type="button" class="btn btn-outline" id="btn-refresh-broadcasts">
+                <i class="fa-solid fa-rotate"></i> Refresh
+              </button>
+            </div>
+          </div>
+
+          <!-- 2 Columns: Composer on Left, Live Preview & Low-Stock Settings on Right -->
+          <div class="grid-2-col" style="display: grid; grid-template-columns: 1.15fr 0.85fr; gap: 20px; margin-bottom: 24px;">
+            
+            <!-- Left: Broadcast Composer -->
+            <div class="card glass-card">
+              <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+                <h3><i class="fa-solid fa-pen-to-square text-primary"></i> Compose Broadcast Message</h3>
+                <div style="display: flex; gap: 6px;">
+                  <button type="button" class="btn btn-sm btn-secondary" id="btn-template-promo">🎁 Promo Template</button>
+                  <button type="button" class="btn btn-sm btn-secondary" id="btn-template-stock">⚡ Stock Refill Template</button>
+                </div>
+              </div>
+              <div class="card-body">
+                <form id="form-broadcast">
+                  <div class="form-group">
+                    <label for="bc-message-input">
+                      <span>Message Content (HTML Allowed)</span>
+                      <small style="color: #64748b; margin-left: 6px;">Supports &lt;b&gt;, &lt;i&gt;, &lt;code&gt;, &lt;a href=""&gt;</small>
+                    </label>
+                    <textarea id="bc-message-input" class="form-control" rows="7" placeholder="🔥 WEEKEND MEGA SALE IS LIVE!&#10;&#10;Get <b>30% OFF</b> on all VIP Digital License Keys!&#10;&#10;⚡ Instant Delivery&#10;🔒 100% Guaranteed Stock&#10;&#10;👉 Tap the button below to claim your discount now!" required></textarea>
+                  </div>
+
+                  <div class="form-group">
+                    <label for="bc-photo-url-input">
+                      <i class="fa-solid fa-image text-info"></i> Attached Banner Image URL (Optional)
+                    </label>
+                    <input type="url" id="bc-photo-url-input" class="form-control" placeholder="https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=800">
+                  </div>
+
+                  <div class="form-row" style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                    <div class="form-group">
+                      <label for="bc-btn-text-input"><i class="fa-solid fa-square-arrow-up-right text-success"></i> Inline Button Label</label>
+                      <input type="text" id="bc-btn-text-input" class="form-control" placeholder="🛒 Claim 30% Off Now">
+                    </div>
+                    <div class="form-group">
+                      <label for="bc-btn-url-input"><i class="fa-solid fa-link text-success"></i> Button Target URL</label>
+                      <input type="text" id="bc-btn-url-input" class="form-control" placeholder="https://t.me/sandy69services_bot?start=shop">
+                    </div>
+                  </div>
+
+                  <div style="margin-top: 20px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; border-top: 1px solid rgba(255,255,255,0.08); padding-top: 16px;">
+                    <button type="button" class="btn btn-outline" id="btn-test-broadcast">
+                      <i class="fa-solid fa-vial"></i> Send Test to Admin
+                    </button>
+                    <button type="submit" class="btn btn-primary" id="btn-send-broadcast">
+                      <i class="fa-solid fa-rocket"></i> Send Mass Broadcast to All Users
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+
+            <!-- Right: Live Preview & Low-Stock Settings -->
+            <div style="display: flex; flex-direction: column; gap: 20px;">
+              
+              <!-- Live Telegram Message Preview -->
+              <div class="card glass-card">
+                <div class="card-header">
+                  <h3><i class="fa-brands fa-telegram text-info"></i> Live Telegram Preview</h3>
+                </div>
+                <div class="card-body" style="padding: 16px;">
+                  <div class="telegram-preview-box" style="background: #17212b; border: 1px solid #242f3d; border-radius: 12px; padding: 14px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
+                    <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 10px;">
+                      <div style="width: 28px; height: 28px; border-radius: 50%; background: #2481cc; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 13px;">
+                        <i class="fa-solid fa-robot"></i>
+                      </div>
+                      <strong style="color: #64b5f6; font-size: 13.5px;" id="preview-bot-title">Sandy69 - STORE</strong>
+                    </div>
+
+                    <img id="preview-photo" src="" alt="Banner Preview" style="width: 100%; border-radius: 8px; margin-bottom: 10px; max-height: 180px; object-fit: cover; display: none;">
+
+                    <div id="preview-text" style="color: #f5f5f5; font-size: 13px; line-height: 1.5; white-space: pre-wrap; word-break: break-word;">
+                      Your message preview will appear here in real-time...
+                    </div>
+
+                    <div id="preview-button-wrap" style="margin-top: 12px; display: none;">
+                      <div id="preview-button-label" style="background: #2b5278; color: #fff; text-align: center; padding: 8px 12px; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: default;">
+                        Button Label
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Low-Stock Alerts Settings Card -->
+              <div class="card glass-card">
+                <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+                  <h3><i class="fa-solid fa-shield-halved text-warning"></i> Low-Stock Alert Settings</h3>
+                  <button type="button" class="btn btn-sm btn-outline" id="btn-audit-stock" title="Scan all products now">
+                    <i class="fa-solid fa-magnifying-glass"></i> Audit Stock
+                  </button>
+                </div>
+                <div class="card-body">
+                  <form id="form-stock-settings">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
+                      <div>
+                        <strong style="font-size: 0.92rem; display: block;">Telegram Low-Stock Alerts</strong>
+                        <span style="font-size: 0.8rem; color: #94a3b8;">Notify Admin when local keys run low</span>
+                      </div>
+                      <label class="switch">
+                        <input type="checkbox" id="stock-alerts-enabled-input" checked>
+                        <span class="slider"></span>
+                      </label>
+                    </div>
+
+                    <div class="form-group" style="margin-bottom: 14px;">
+                      <label for="stock-threshold-input">Alert Threshold (Keys remaining &le;)</label>
+                      <input type="number" id="stock-threshold-input" class="form-control" value="2" min="0" max="50" required>
+                    </div>
+
+                    <div style="display: flex; justify-content: flex-end;">
+                      <button type="submit" class="btn btn-sm btn-primary">
+                        <i class="fa-solid fa-floppy-disk"></i> Save Alert Settings
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              </div>
+
+            </div>
+
+          </div>
+
+          <!-- Broadcast History Table -->
+          <div class="card glass-card">
+            <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+              <h3><i class="fa-solid fa-clock-rotate-left text-primary"></i> Broadcast Campaign History</h3>
+              <span class="badge badge-info" id="bc-history-count">0 Campaigns</span>
+            </div>
+            <div class="table-responsive">
+              <table class="data-table" id="table-broadcasts">
+                <thead>
+                  <tr>
+                    <th>Date (IST)</th>
+                    <th>Message Snippet</th>
+                    <th>Targets</th>
+                    <th>Sent</th>
+                    <th>Failed / Blocked</th>
+                    <th>Success Rate</th>
+                    <th>Admin</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody id="broadcasts-table-body">
+                  <tr>
+                    <td colspan="8" style="text-align: center; color: #94a3b8; padding: 25px;">
+                      <i class="fa-solid fa-spinner fa-spin"></i> Loading broadcast history...
                     </td>
                   </tr>
                 </tbody>

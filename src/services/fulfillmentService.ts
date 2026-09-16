@@ -6,6 +6,7 @@ import { licenseRepo } from '../database/repositories/licenseRepo.js';
 import { mappingRepo } from '../database/repositories/mappingRepo.js';
 import { orderRepo, Order } from '../database/repositories/orderRepo.js';
 import { licenseApiService, extractLicenseKeyString } from './licenseApiService.js';
+import { stockAlertService } from './stockAlertService.js';
 import crypto from 'crypto';
 
 export interface PurchaseResult {
@@ -171,6 +172,11 @@ export const fulfillmentService = {
           api_tx_id: null,
           status: 'COMPLETED'
         });
+      });
+
+      // Proactive inventory check: Dispatch Telegram alert if stock is low or empty
+      stockAlertService.checkAndNotifyLowStock(serviceId, validityId).catch((err) => {
+        console.error('Low stock alert error:', err);
       });
 
       return {
