@@ -1140,3 +1140,21 @@ input:checked + .switch-slider:before {
 .tg-btn:hover {
   background: #366594;
 }
+
+/* Backup & Restore Styles */
+.upload-dropzone:hover {
+  border-color: #6366f1 !important;
+  background: rgba(99, 102, 241, 0.08) !important;
+}
+
+.upload-dropzone.dragover {
+  border-color: #3b82f6 !important;
+  background: rgba(59, 130, 246, 0.12) !important;
+}
+
+@media (max-width: 900px) {
+  .grid-2-col {
+    grid-template-columns: 1fr !important;
+  }
+}
+

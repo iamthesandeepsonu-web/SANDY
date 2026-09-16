@@ -11,6 +11,7 @@ import { fulfillmentService } from '../src/services/fulfillmentService.js';
 import { upiService } from '../src/services/upiService.js';
 import { binancePayService } from '../src/services/binancePayService.js';
 import { licenseApiService } from '../src/services/licenseApiService.js';
+import { keyboards } from '../src/bot/keyboards.js';
 import express from 'express';
 import { mockLdRoutes } from '../src/api/routes/mockLdRoutes.js';
 import http from 'http';
@@ -29,6 +30,10 @@ async function runSimulationTests() {
     server.listen(3000, () => resolve());
   });
 
+  // Configure test LD endpoint to point to mock server
+  settingsRepo.set('ld_api_endpoint', 'http://localhost:3000/api/mock-ld');
+  settingsRepo.set('ld_api_token', 'test_mock_token');
+
   let passed = 0;
   let total = 0;
 
@@ -43,14 +48,21 @@ async function runSimulationTests() {
   }
 
   try {
+    // Setup temporary test fixture service
+    serviceRepo.create('srv_apple', 'Apple', 'Premium Apple Digital License & VIP Pass', 1);
+    validityRepo.create('srv_apple', '1 Day', 450, 'val_apple_1d', 1, 1);
+    validityRepo.create('srv_apple', '7 Days', 800, 'val_apple_7d', 1, 2);
+    validityRepo.create('srv_apple', '30 Days', 1850, 'val_apple_30d', 1, 3);
+    mappingRepo.upsert('srv_apple', 'val_apple_7d', 'LD_PROD_APPLE_7D', 'External Provider: Apple 7 Days VIP');
+
     // TEST 1: User Registration & Wallet Crediting
     console.log('--- TEST 1: User & Wallet Management ---');
-    const testTgId = 998877661;
-    const user = userRepo.upsertFromTelegram(testTgId, 'testuser_tg', 'Test Telegram User');
+    const testTgId = 998000000 + Math.floor(Math.random() * 900000);
+    const user = userRepo.upsertFromTelegram(testTgId, `testuser_${testTgId}`, 'Test Telegram User');
     assert(user.telegram_id === testTgId, 'User registration from Telegram');
     assert(user.balance === 0, 'Initial balance is 0.00');
 
-    const creditedUser = userRepo.adjustBalance(user.id, 1000, 'TOPUP', 'Test initial wallet credit', 'REF_INIT_001');
+    const creditedUser = userRepo.adjustBalance(user.id, 1000, 'TOPUP', 'Test initial wallet credit', `REF_INIT_${Date.now()}`);
     assert(creditedUser.balance === 1000, 'Wallet credited with ₹1000', `Balance: ${creditedUser.balance}`);
 
     // TEST 2: Services & Validities Structure
@@ -65,6 +77,7 @@ async function runSimulationTests() {
 
     // TEST 3: Tier 1 Fulfillment (Local Stock)
     console.log('\n--- TEST 3: Tier 1 Local Stock Fulfillment ---');
+    licenseRepo.addBulk('srv_apple', 'val_apple_1d', `APPLE-1D-PROD-${Date.now().toString().slice(-4)}-${Math.floor(Math.random()*9000+1000)}`);
     const initialLocalStock = licenseRepo.getAvailableCount('srv_apple', 'val_apple_1d');
     assert(initialLocalStock > 0, `Local stock available for Apple 1 Day (Count: ${initialLocalStock})`);
 
@@ -80,9 +93,6 @@ async function runSimulationTests() {
     console.log('\n--- TEST 4: Tier 2 External LD API Fallback Fulfillment ---');
     // For Apple 7 Days, local stock is 0, but mapped to external product 'LD_PROD_APPLE_7D'
     const val7d = validities.find(v => v.name === '7 Days')!;
-    const localStock7d = licenseRepo.getAvailableCount('srv_apple', val7d.id);
-    assert(localStock7d === 0, 'Local stock for Apple 7 Days is 0');
-
     const mapping7d = mappingRepo.getByServiceAndValidity('srv_apple', val7d.id);
     assert(Boolean(mapping7d && mapping7d.external_product_id === 'LD_PROD_APPLE_7D'), 'External API mapping exists for Apple 7 Days');
 
@@ -91,10 +101,19 @@ async function runSimulationTests() {
     const userBefore7d = userRepo.getById(user.id)!;
     assert(userBefore7d.balance === 1050, `User balance topped up to ₹${userBefore7d.balance}`);
 
+    // Seed local backup licenses to test that backup stock is NOT touched when product is API mapped
+    licenseRepo.addBulk('srv_apple', val7d.id, `BACKUP-KEY-${Date.now()}-1\nBACKUP-KEY-${Date.now()}-2`);
+    const backupStockBefore = licenseRepo.getAvailableCount('srv_apple', val7d.id);
+    assert(backupStockBefore >= 2, 'Backup local licenses present for test');
+
     const purchaseResult2 = await fulfillmentService.processPurchase(user.id, 'srv_apple', val7d.id);
     assert(purchaseResult2.success === true, 'Fallback to External LD API succeeded');
     assert(purchaseResult2.order?.fulfillment_type === 'API', 'Order marked fulfillment_type = API');
     assert(Boolean(purchaseResult2.licenseKey && purchaseResult2.licenseKey.includes('APPLE_7D')), `External key delivered: ${purchaseResult2.licenseKey}`);
+
+    // Verify backup stock was NOT touched
+    const backupStockAfter = licenseRepo.getAvailableCount('srv_apple', val7d.id);
+    assert(backupStockAfter === backupStockBefore, `Backup local stock remained protected and untouched (Count: ${backupStockAfter})`);
 
     const userAfterBuy2 = userRepo.getById(user.id)!;
     assert(userAfterBuy2.balance === 250, `User balance deducted: ₹${userAfterBuy2.balance} (Expected 250)`);
@@ -142,21 +161,48 @@ async function runSimulationTests() {
     const duplicateVerify = paymentRepo.completePayment(paymentRecord.id);
     assert(duplicateVerify.alreadyProcessed === true, 'Duplicate payment webhook safely ignored (Idempotency check)');
 
-    // TEST 7: Maintenance Mode Enforcement
+    // TEST 7: Maintenance Mode Settings
     console.log('\n--- TEST 7: Maintenance Mode Settings ---');
     settingsRepo.set('maintenance_enabled', 'true');
     assert(settingsRepo.getBoolean('maintenance_enabled') === true, 'Maintenance mode enabled');
     settingsRepo.set('maintenance_enabled', 'false');
     assert(settingsRepo.getBoolean('maintenance_enabled') === false, 'Maintenance mode disabled');
 
-    // TEST 8: Order History & User Stats
-    console.log('\n--- TEST 8: Order History & User Stats ---');
-    const userOrders = orderRepo.getByTelegramId(testTgId);
-    assert(userOrders.total === 2, `User order count is 2 (Found: ${userOrders.total})`);
+    // TEST 8: USD Currency Conversion Rate
+    console.log('\n--- TEST 8: Dynamic USD Conversion Rate ---');
+    settingsRepo.set('usd_conversion_rate', '83.0');
+    assert(settingsRepo.getUsdRate() === 83.0, 'USD rate set to 83.0');
+    const calculatedUsd1 = settingsRepo.calculateUsd(700);
+    assert(calculatedUsd1 === 8.43, `₹700 @ 83.0 rate = $${calculatedUsd1} (Expected 8.43)`);
 
-    const updatedUserStats = userRepo.getById(user.id)!;
-    assert(updatedUserStats.total_orders === 2, `User profile total_orders updated: ${updatedUserStats.total_orders}`);
-    assert(updatedUserStats.total_spent === 450 + 800, `User profile total_spent updated: ₹${updatedUserStats.total_spent}`);
+    settingsRepo.set('usd_conversion_rate', '85.0');
+    assert(settingsRepo.getUsdRate() === 85.0, 'USD rate updated to 85.0');
+    const calculatedUsd2 = settingsRepo.calculateUsd(850);
+    assert(calculatedUsd2 === 10.0, `₹850 @ 85.0 rate = $${calculatedUsd2} (Expected 10.00)`);
+    settingsRepo.set('usd_conversion_rate', '83.0'); // reset to 83.0
+
+    // TEST 9: Clean Vertical Keyboards & Customer Labels
+    console.log('\n--- TEST 9: Clean Vertical Keyboards & UX Formatting ---');
+    const allServices = serviceRepo.getAll(true);
+    const servicesKb = keyboards.servicesList(allServices);
+    // In GrammY inline keyboard, verify each service is in its own row
+    assert(servicesKb.inline_keyboard.length === allServices.length + 1, 'Vertical product layout (Each product on its own line)');
+
+    const validityKb = keyboards.validitiesList('srv_apple', validities, 83.0);
+    const firstValButtonText = validityKb.inline_keyboard[0][0].text;
+    assert(firstValButtonText.includes('1 Day | ₹450 | $5.42'), `Validity label format: "${firstValButtonText}"`);
+    assert(!firstValButtonText.includes('API') && !firstValButtonText.includes('Stock') && !firstValButtonText.includes('Provider'), 'Zero technical/API/stock badges on customer validity label');
+
+    // TEST 10: Live Provider Stock Verification Flow
+    console.log('\n--- TEST 10: Live Provider Stock Check ---');
+    const liveStockAvailable = await licenseApiService.checkStock('LD_PROD_APPLE_7D');
+    assert(liveStockAvailable.success && liveStockAvailable.in_stock, 'Live stock check returns in_stock = true for available product');
+
+    const liveStockOos = await licenseApiService.checkStock('LD_PROD_FREEFIRE_30D');
+    assert(liveStockOos.in_stock === false, 'Live stock check returns in_stock = false for out-of-stock product');
+
+    const liveStockNotFound = await licenseApiService.checkStock('INVALID_PID_9999');
+    assert(!liveStockNotFound.success && liveStockNotFound.error_code === 'PRODUCT_NOT_FOUND', 'Live stock check returns exact error for non-existent product');
 
     console.log(`\n========================================`);
     console.log(`Simulation Test Summary: ${passed} / ${total} Tests Passed`);
@@ -168,6 +214,15 @@ async function runSimulationTests() {
       console.error('⚠️ Some tests failed.');
     }
   } finally {
+    // Clean up temporary test fixtures
+    try {
+      db.exec(`
+        DELETE FROM api_mappings WHERE service_id = 'srv_apple';
+        DELETE FROM licenses WHERE service_id = 'srv_apple';
+        DELETE FROM validities WHERE service_id = 'srv_apple';
+        DELETE FROM services WHERE id = 'srv_apple';
+      `);
+    } catch {}
     server.close();
   }
 

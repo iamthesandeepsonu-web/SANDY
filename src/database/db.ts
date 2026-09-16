@@ -173,6 +173,19 @@ export function initDatabase() {
       value TEXT NOT NULL,
       updated_at TEXT DEFAULT (datetime('now'))
     );
+
+    CREATE TABLE IF NOT EXISTS backup_audit_logs (
+      id TEXT PRIMARY KEY,
+      action TEXT NOT NULL,
+      performed_by TEXT NOT NULL,
+      backup_name TEXT,
+      file_size INTEGER,
+      status TEXT NOT NULL,
+      details TEXT,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_backup_audit_time ON backup_audit_logs(created_at);
   `);
 
   // Default system settings

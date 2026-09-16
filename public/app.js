@@ -166,7 +166,8 @@ function switchView(viewName) {
     payments: { title: 'Payment Gateways & Top-Ups', sub: 'Configure Binance Pay, UPI Auto QR, and verify top-ups' },
     orders: { title: 'Orders & Fulfillment History', sub: 'Audit and inspect all customer digital license purchases' },
     users: { title: 'User & Wallet Management', sub: 'Search users, inspect balances, adjust credits, and view history' },
-    maintenance: { title: 'Maintenance Mode', sub: 'Instantly pause shopping flows with custom notice messages' }
+    maintenance: { title: 'Maintenance Mode', sub: 'Instantly pause shopping flows with custom notice messages' },
+    backups: { title: 'Backup & Restore Management', sub: 'Automated 12:01 AM IST backups, Telegram delivery & disaster recovery' }
   };
 
   const meta = titles[viewName] || { title: 'Admin Dashboard', sub: '' };
@@ -202,6 +203,9 @@ function loadViewData(viewName) {
       break;
     case 'maintenance':
       loadMaintenanceData();
+      break;
+    case 'backups':
+      loadBackupsData();
       break;
     case 'support':
       loadSupportData();
@@ -1501,7 +1505,377 @@ function setupEventListeners() {
   safeOn('orders-filter-type', 'change', loadOrdersData);
   safeOn('orders-filter-search', 'input', debounce(loadOrdersData, 300));
   safeOn('users-search-input', 'input', debounce(loadUsersData, 300));
+
+  // Backup & Restore Events
+  safeOn('btn-create-backup-now', 'click', handleCreateBackupNow);
+  safeOn('btn-refresh-backups', 'click', loadBackupsData);
+  safeOn('btn-execute-restore', 'click', handleExecuteRestore);
+
+  const dropzone = document.getElementById('backup-dropzone');
+  const fileInput = document.getElementById('backup-file-input');
+
+  if (dropzone && fileInput) {
+    dropzone.addEventListener('click', () => fileInput.click());
+    fileInput.addEventListener('change', (e) => {
+      const file = e.target.files?.[0];
+      if (file) {
+        document.getElementById('selected-upload-name').textContent = `Selected: ${file.name} (${formatBytes(file.size)})`;
+        document.getElementById('btn-submit-upload-restore').disabled = false;
+      }
+    });
+
+    dropzone.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      dropzone.style.borderColor = '#6366f1';
+      dropzone.style.background = 'rgba(99, 102, 241, 0.1)';
+    });
+
+    dropzone.addEventListener('dragleave', () => {
+      dropzone.style.borderColor = 'rgba(255,255,255,0.15)';
+      dropzone.style.background = 'rgba(255,255,255,0.02)';
+    });
+
+    dropzone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      dropzone.style.borderColor = 'rgba(255,255,255,0.15)';
+      dropzone.style.background = 'rgba(255,255,255,0.02)';
+      if (e.dataTransfer.files?.length) {
+        fileInput.files = e.dataTransfer.files;
+        const file = e.dataTransfer.files[0];
+        document.getElementById('selected-upload-name').textContent = `Selected: ${file.name} (${formatBytes(file.size)})`;
+        document.getElementById('btn-submit-upload-restore').disabled = false;
+      }
+    });
+  }
+
+  safeOn('btn-submit-upload-restore', 'click', handleUploadRestoreClick);
 }
+
+// ----------------------------------------------------
+// BACKUP & RESTORE MODULE
+// ----------------------------------------------------
+let pendingRestoreTarget = null;
+let pendingRestoreIsUpload = false;
+
+function formatBytes(bytes, decimals = 2) {
+  if (!bytes || bytes === 0) return '0 Bytes';
+  const k = 1024;
+  const dm = decimals < 0 ? 0 : decimals;
+  const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+}
+
+function formatISTDate(isoStr) {
+  if (!isoStr) return '--';
+  try {
+    const d = new Date(isoStr);
+    return d.toLocaleString('en-IN', {
+      timeZone: 'Asia/Kolkata',
+      dateStyle: 'medium',
+      timeStyle: 'medium',
+      hour12: true
+    });
+  } catch {
+    return isoStr;
+  }
+}
+
+async function loadBackupsData() {
+  const tbody = document.getElementById('backups-table-body');
+  if (tbody) {
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: #94a3b8; padding: 25px;"><i class="fa-solid fa-spinner fa-spin"></i> Loading backups...</td></tr>';
+  }
+
+  try {
+    const [backupsRes, logsRes] = await Promise.all([
+      api('/backups'),
+      api('/backups/audit-logs')
+    ]);
+
+    if (backupsRes.success) {
+      const list = backupsRes.backups || [];
+      const stats = backupsRes.stats || {};
+
+      // Update metric cards
+      document.getElementById('bk-total-count').textContent = stats.totalBackups || list.length;
+      document.getElementById('bk-table-count').textContent = `${list.length} Files`;
+
+      if (stats.latestBackup) {
+        document.getElementById('bk-latest-time').textContent = formatISTDate(stats.latestBackup.createdAt);
+        document.getElementById('bk-latest-size').textContent = stats.latestBackup.sizeFormatted;
+        document.getElementById('bk-latest-type').textContent = stats.latestBackup.type;
+      } else if (list.length > 0) {
+        document.getElementById('bk-latest-time').textContent = formatISTDate(list[0].createdAt);
+        document.getElementById('bk-latest-size').textContent = list[0].sizeFormatted;
+        document.getElementById('bk-latest-type').textContent = list[0].type;
+      } else {
+        document.getElementById('bk-latest-time').textContent = 'No backups yet';
+        document.getElementById('bk-latest-size').textContent = '0 KB';
+        document.getElementById('bk-latest-type').textContent = 'Scheduled 12:01 AM IST';
+      }
+
+      // Render table
+      if (tbody) {
+        if (list.length === 0) {
+          tbody.innerHTML = `
+            <tr>
+              <td colspan="6" style="text-align: center; color: #94a3b8; padding: 30px;">
+                <i class="fa-solid fa-shield-cat" style="font-size: 2rem; margin-bottom: 8px; display: block; opacity: 0.5;"></i>
+                No backups created yet. Click <strong>"Create Backup Now"</strong> above to generate your first disaster recovery snapshot.
+              </td>
+            </tr>
+          `;
+        } else {
+          tbody.innerHTML = list.map(b => {
+            const isDb = b.format === 'db';
+            const typeBadgeClass = b.type.includes('Daily') ? 'badge-success' : (b.type.includes('Safety') ? 'badge-warning' : 'badge-info');
+            return `
+              <tr>
+                <td>
+                  <div style="display: flex; align-items: center; gap: 8px;">
+                    <i class="fa-solid ${isDb ? 'fa-database text-primary' : 'fa-file-code text-warning'}"></i>
+                    <strong style="font-family: monospace; font-size: 0.88rem;">${escapeHtml(b.filename)}</strong>
+                  </div>
+                </td>
+                <td><span class="badge ${typeBadgeClass}">${escapeHtml(b.type)}</span></td>
+                <td><code>${escapeHtml(b.sizeFormatted)}</code></td>
+                <td><small style="color: #cbd5e1;">${formatISTDate(b.createdAt)}</small></td>
+                <td><span class="status-chip chip-success" style="font-size: 0.75rem; padding: 2px 8px;"><span class="pulse-dot"></span>Ready</span></td>
+                <td style="text-align: right;">
+                  <div style="display: inline-flex; gap: 6px;">
+                    <button class="btn btn-sm btn-outline" onclick="downloadBackup('${escapeHtml(b.filename)}')" title="Download Backup File">
+                      <i class="fa-solid fa-download"></i>
+                    </button>
+                    <button class="btn btn-sm btn-outline" style="border-color: #ef4444; color: #ef4444;" onclick="openRestoreModal('${escapeHtml(b.filename)}')" title="Restore Server Database from this Backup">
+                      <i class="fa-solid fa-rotate-left"></i> Restore
+                    </button>
+                    <button class="btn btn-sm btn-outline" style="color: #94a3b8;" onclick="deleteBackup('${escapeHtml(b.filename)}')" title="Delete Backup File">
+                      <i class="fa-solid fa-trash"></i>
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            `;
+          }).join('');
+        }
+      }
+    }
+
+    // Render Audit Logs
+    if (logsRes && logsRes.success) {
+      renderBackupAuditLogs(logsRes.logs || []);
+    }
+  } catch (err) {
+    console.error('Failed to load backups data:', err);
+    if (tbody) {
+      tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: #ef4444; padding: 20px;">Failed to load backups: ${escapeHtml(err.message)}</td></tr>`;
+    }
+    showToast(err.message, 'error');
+  }
+}
+
+function renderBackupAuditLogs(logs) {
+  const tbody = document.getElementById('backup-logs-table-body');
+  if (!tbody) return;
+
+  if (logs.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: #94a3b8; padding: 20px;">No audit events recorded yet.</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = logs.map(l => {
+    const isSuccess = l.status === 'SUCCESS';
+    const statusChip = isSuccess
+      ? '<span class="status-chip chip-success" style="font-size: 0.75rem; padding: 2px 8px;">SUCCESS</span>'
+      : '<span class="status-chip chip-danger" style="font-size: 0.75rem; padding: 2px 8px;">FAILED</span>';
+
+    return `
+      <tr>
+        <td><small style="color: #cbd5e1;">${formatISTDate(l.created_at)}</small></td>
+        <td><strong>${escapeHtml(l.action)}</strong></td>
+        <td><code style="font-size: 0.8rem;">${escapeHtml(l.filename || '--')}</code></td>
+        <td><span class="badge badge-info">${escapeHtml(l.performed_by || 'system')}</span></td>
+        <td>${statusChip}</td>
+        <td><small style="color: #94a3b8;">${escapeHtml(l.details || '')}</small></td>
+      </tr>
+    `;
+  }).join('');
+}
+
+async function handleCreateBackupNow() {
+  const btn = document.getElementById('btn-create-backup-now');
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Creating Snapshot...';
+  }
+
+  try {
+    showToast('Creating full disaster recovery snapshot...', 'info');
+    const res = await api('/backups/create', { method: 'POST' });
+    if (res.success) {
+      showToast('✅ Disaster recovery backup created and delivered to Telegram!', 'success');
+      loadBackupsData();
+    } else {
+      showToast(res.message || 'Failed to create backup', 'error');
+    }
+  } catch (err) {
+    showToast('Backup failed: ' + err.message, 'error');
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = '<i class="fa-solid fa-bolt"></i> Create Backup Now';
+    }
+  }
+}
+
+window.downloadBackup = function(filename) {
+  const token = state.token || localStorage.getItem('admin_token');
+  const downloadUrl = `/api/backups/${encodeURIComponent(filename)}/download?token=${encodeURIComponent(token || '')}`;
+  window.open(downloadUrl, '_blank');
+  showToast(`Downloading ${filename}...`, 'info');
+};
+
+window.openRestoreModal = function(filename) {
+  pendingRestoreTarget = filename;
+  pendingRestoreIsUpload = false;
+  document.getElementById('confirm-restore-filename').textContent = filename;
+  openModal('modal-restore-confirm');
+};
+
+function handleUploadRestoreClick() {
+  const fileInput = document.getElementById('backup-file-input');
+  if (!fileInput || !fileInput.files || fileInput.files.length === 0) {
+    showToast('Please select or drop a backup file first.', 'error');
+    return;
+  }
+
+  const file = fileInput.files[0];
+  pendingRestoreTarget = file;
+  pendingRestoreIsUpload = true;
+  document.getElementById('confirm-restore-filename').textContent = `Uploaded File: ${file.name} (${formatBytes(file.size)})`;
+  openModal('modal-restore-confirm');
+}
+
+async function handleExecuteRestore() {
+  if (!pendingRestoreTarget) return;
+
+  const btn = document.getElementById('btn-execute-restore');
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Restoring Database...';
+  }
+
+  try {
+    if (pendingRestoreIsUpload) {
+      // Upload & Restore flow
+      const file = pendingRestoreTarget;
+      if (file.name.endsWith('.json')) {
+        const text = await file.text();
+        const parsed = JSON.parse(text);
+        const res = await api('/backups/upload-restore', {
+          method: 'POST',
+          body: JSON.stringify({
+            data: parsed,
+            format: 'json',
+            filename: file.name
+          })
+        });
+
+        if (res.success) {
+          showToast('🎉 System restored successfully from uploaded JSON backup!', 'success');
+          closeModal('modal-restore-confirm');
+          document.getElementById('backup-file-input').value = '';
+          document.getElementById('selected-upload-name').textContent = 'Click or drag backup file here';
+          document.getElementById('btn-submit-upload-restore').disabled = true;
+          loadBackupsData();
+          loadOverviewData();
+          loadServicesData();
+        } else {
+          showToast(res.message || 'Restoration failed', 'error');
+        }
+      } else {
+        // Binary SQLite base64 restore
+        const reader = new FileReader();
+        reader.onload = async (e) => {
+          try {
+            const base64 = e.target.result.split(',')[1];
+            const res = await api('/backups/upload-restore', {
+              method: 'POST',
+              body: JSON.stringify({
+                data: base64,
+                format: 'db',
+                filename: file.name
+              })
+            });
+
+            if (res.success) {
+              showToast('🎉 System restored successfully from uploaded SQLite .db!', 'success');
+              closeModal('modal-restore-confirm');
+              document.getElementById('backup-file-input').value = '';
+              document.getElementById('selected-upload-name').textContent = 'Click or drag backup file here';
+              document.getElementById('btn-submit-upload-restore').disabled = true;
+              loadBackupsData();
+              loadOverviewData();
+              loadServicesData();
+            } else {
+              showToast(res.message || 'Restoration failed', 'error');
+            }
+          } catch (uploadErr) {
+            showToast('Restore failed: ' + uploadErr.message, 'error');
+          } finally {
+            if (btn) {
+              btn.disabled = false;
+              btn.innerHTML = '<i class="fa-solid fa-rotate-left"></i> Yes, Restore System Now';
+            }
+          }
+        };
+        reader.readAsDataURL(file);
+        return;
+      }
+    } else {
+      // Stored Server Backup Restore Flow
+      const filename = pendingRestoreTarget;
+      const res = await api('/backups/restore', {
+        method: 'POST',
+        body: JSON.stringify({ filename })
+      });
+
+      if (res.success) {
+        showToast(`🎉 System restored successfully from ${filename}!`, 'success');
+        closeModal('modal-restore-confirm');
+        loadBackupsData();
+        loadOverviewData();
+        loadServicesData();
+      } else {
+        showToast(res.message || 'Restore failed', 'error');
+      }
+    }
+  } catch (err) {
+    showToast('Restore failed: ' + err.message, 'error');
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = '<i class="fa-solid fa-rotate-left"></i> Yes, Restore System Now';
+    }
+  }
+}
+
+window.deleteBackup = async function(filename) {
+  if (!confirm(`Are you sure you want to delete backup file "${filename}"? This cannot be undone.`)) return;
+
+  try {
+    const res = await api(`/backups/${encodeURIComponent(filename)}`, { method: 'DELETE' });
+    if (res.success) {
+      showToast(res.message || 'Backup deleted successfully', 'success');
+      loadBackupsData();
+    } else {
+      showToast(res.message || 'Failed to delete backup', 'error');
+    }
+  } catch (err) {
+    showToast(err.message, 'error');
+  }
+};
 
 function populateMappingModal() {
   loadServicesForFilters();

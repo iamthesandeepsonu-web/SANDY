@@ -19,7 +19,9 @@ import { maintenanceRoutes } from './api/routes/maintenanceRoutes.js';
 import { settingsRoutes } from './api/routes/settingsRoutes.js';
 import { statsRoutes } from './api/routes/statsRoutes.js';
 import { mockLdRoutes } from './api/routes/mockLdRoutes.js';
+import { backupRoutes } from './api/routes/backupRoutes.js';
 import { emailVerificationService } from './services/emailVerificationService.js';
+import { backupService } from './services/backupService.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -32,8 +34,8 @@ console.log('✅ SQLite Database initialized successfully with WAL mode');
 
 // Middlewares
 app.use(cors());
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
 // Serve Admin Dashboard Static Frontend
 const publicDir = path.join(__dirname, '../public');
@@ -53,6 +55,7 @@ app.use('/api/settings/general', settingsRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/stats', statsRoutes);
 app.use('/api/mock-ld', mockLdRoutes);
+app.use('/api/backups', backupRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {
@@ -95,5 +98,8 @@ if (bot) {
 emailVerificationService.start().catch((err) => {
   console.error('Failed to start UPI email verification worker:', err.message);
 });
+
+// Start 12:01 AM IST Daily Automated Backup Scheduler
+backupService.startScheduler();
 
 export { app, server };
