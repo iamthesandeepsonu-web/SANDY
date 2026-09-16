@@ -5,7 +5,7 @@ import { userRepo } from '../../database/repositories/userRepo.js';
 import { settingsRepo } from '../../database/repositories/settingsRepo.js';
 import { mappingRepo } from '../../database/repositories/mappingRepo.js';
 import { licenseRepo } from '../../database/repositories/licenseRepo.js';
-import { licenseApiService } from '../../services/licenseApiService.js';
+import { licenseApiService, extractLicenseKeyString } from '../../services/licenseApiService.js';
 import { fulfillmentService } from '../../services/fulfillmentService.js';
 import { binancePayService } from '../../services/binancePayService.js';
 import { upiService } from '../../services/upiService.js';
@@ -547,9 +547,11 @@ export async function handlePurchaseDirectBinance(ctx: Context, serviceId: strin
   }
 }
 
-export function escapeHtml(str: string): string {
-  if (!str) return '';
-  return String(str)
+export function escapeHtml(str: any): string {
+  if (str === undefined || str === null) return '';
+  let text = typeof str === 'string' ? str : (typeof str === 'object' ? extractLicenseKeyString(str) : String(str));
+  if (!text || text === '[object Object]') text = '';
+  return String(text)
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;');

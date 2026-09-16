@@ -5,7 +5,7 @@ import { validityRepo } from '../database/repositories/validityRepo.js';
 import { licenseRepo } from '../database/repositories/licenseRepo.js';
 import { mappingRepo } from '../database/repositories/mappingRepo.js';
 import { orderRepo, Order } from '../database/repositories/orderRepo.js';
-import { licenseApiService } from './licenseApiService.js';
+import { licenseApiService, extractLicenseKeyString } from './licenseApiService.js';
 import crypto from 'crypto';
 
 export interface PurchaseResult {
@@ -75,27 +75,30 @@ export const fulfillmentService = {
       const apiResult = await licenseApiService.orderProduct(mapping.external_product_id, orderId);
 
       if (apiResult.success && apiResult.license_key) {
-        // Successful API Fulfillment
-        const order = orderRepo.create({
-          id: orderId,
-          user_id: userId,
-          telegram_id: user.telegram_id,
-          service_id: service.id,
-          service_name: service.name,
-          validity_id: validity.id,
-          validity_name: validity.name,
-          price_paid: validity.price,
-          license_key: apiResult.license_key,
-          fulfillment_type: 'API',
-          api_tx_id: apiResult.external_tx_id || null,
-          status: 'COMPLETED'
-        });
+        const cleanKey = extractLicenseKeyString(apiResult.license_key);
+        if (cleanKey && cleanKey !== '[object Object]') {
+          // Successful API Fulfillment
+          const order = orderRepo.create({
+            id: orderId,
+            user_id: userId,
+            telegram_id: user.telegram_id,
+            service_id: service.id,
+            service_name: service.name,
+            validity_id: validity.id,
+            validity_name: validity.name,
+            price_paid: validity.price,
+            license_key: cleanKey,
+            fulfillment_type: 'API',
+            api_tx_id: apiResult.external_tx_id || null,
+            status: 'COMPLETED'
+          });
 
-        return {
-          success: true,
-          order,
-          licenseKey: apiResult.license_key
-        };
+          return {
+            success: true,
+            order,
+            licenseKey: cleanKey
+          };
+        }
       }
 
       // API Failed or is Out of Stock:

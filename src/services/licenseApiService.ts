@@ -33,6 +33,116 @@ export interface LdOrderResult {
   error_message?: string;
 }
 
+export function extractLicenseKeyString(input: any): string {
+  if (!input) return '';
+  if (typeof input === 'string') {
+    const trimmed = input.trim();
+    if (trimmed === '[object Object]' || trimmed === '') return '';
+    return trimmed;
+  }
+  if (typeof input === 'number') {
+    return String(input);
+  }
+  if (Array.isArray(input)) {
+    for (const item of input) {
+      const extracted = extractLicenseKeyString(item);
+      if (extracted && extracted !== '[object Object]') return extracted;
+    }
+    return '';
+  }
+  if (typeof input === 'object') {
+    const candidateProps = [
+      'key',
+      'license_key',
+      'licenseKey',
+      'license',
+      'code',
+      'serial',
+      'serial_key',
+      'token',
+      'keys',
+      'licence_key',
+      'licence',
+      'pin',
+      'card_number',
+      'content',
+      'value',
+      'secret'
+    ];
+    for (const prop of candidateProps) {
+      if (input[prop] !== undefined) {
+        const extracted = extractLicenseKeyString(input[prop]);
+        if (extracted && extracted !== '[object Object]') return extracted;
+      }
+    }
+    for (const val of Object.values(input)) {
+      if (typeof val === 'string' && val.trim() && val.trim() !== '[object Object]') {
+        return val.trim();
+      }
+      if (typeof val === 'object' && val !== null) {
+        const extracted = extractLicenseKeyString(val);
+        if (extracted && extracted !== '[object Object]') return extracted;
+      }
+    }
+  }
+  return '';
+}
+
+export function extractAllLicenseKeys(input: any): string[] {
+  const result: string[] = [];
+  function walk(node: any) {
+    if (!node) return;
+    if (typeof node === 'string') {
+      const trimmed = node.trim();
+      if (trimmed && trimmed !== '[object Object]' && !result.includes(trimmed)) {
+        result.push(trimmed);
+      }
+      return;
+    }
+    if (typeof node === 'number') {
+      result.push(String(node));
+      return;
+    }
+    if (Array.isArray(node)) {
+      for (const item of node) walk(item);
+      return;
+    }
+    if (typeof node === 'object') {
+      const candidateProps = [
+        'key',
+        'license_key',
+        'licenseKey',
+        'license',
+        'code',
+        'serial',
+        'serial_key',
+        'token',
+        'keys',
+        'licence_key',
+        'licence',
+        'pin',
+        'card_number',
+        'content',
+        'value'
+      ];
+      let foundProp = false;
+      for (const prop of candidateProps) {
+        if (node[prop] !== undefined) {
+          walk(node[prop]);
+          foundProp = true;
+        }
+      }
+      if (!foundProp) {
+        for (const val of Object.values(node)) {
+          walk(val);
+        }
+      }
+    }
+  }
+  walk(input);
+  return result;
+}
+
 export const licenseApiService = {
   getEndpoint(): string {
     const raw = settingsRepo.get('ld_api_endpoint', 'https://licencedashboard.shop/api/v1').trim();
@@ -301,30 +411,16 @@ export const licenseApiService = {
         const resData = response.data;
 
         // Check if response is successful
-        if (resData && (resData.ok === true || resData.status === 'success')) {
-          let licenseKey = '';
-          const keysList: string[] = [];
+        if (resData && (resData.ok === true || resData.status === 'success' || resData.success === true || resData.data)) {
+          const keysList = extractAllLicenseKeys(resData.data || resData);
+          const licenseKey = keysList.length > 0 ? keysList[0] : extractLicenseKeyString(resData);
 
-          if (Array.isArray(resData.data?.keys) && resData.data.keys.length > 0) {
-            licenseKey = String(resData.data.keys[0]);
-            keysList.push(...resData.data.keys.map(String));
-          } else if (Array.isArray(resData.data) && resData.data.length > 0 && resData.data[0].key) {
-            licenseKey = String(resData.data[0].key);
-            keysList.push(...resData.data.map((item: any) => String(item.key)));
-          } else if (resData.data?.license_key || resData.license_key) {
-            licenseKey = String(resData.data?.license_key || resData.license_key);
-            keysList.push(licenseKey);
-          } else if (resData.data?.key) {
-            licenseKey = String(resData.data.key);
-            keysList.push(licenseKey);
-          }
-
-          if (licenseKey) {
+          if (licenseKey && licenseKey !== '[object Object]') {
             return {
               success: true,
               license_key: licenseKey,
-              license_keys: keysList,
-              external_tx_id: resData.data?.tx_id || resData.tx_id || 'LD_TX_' + Date.now()
+              license_keys: keysList.length > 0 ? keysList : [licenseKey],
+              external_tx_id: resData.data?.tx_id || resData.data?.order_id || resData.tx_id || 'LD_TX_' + Date.now()
             };
           }
         }
