@@ -111,7 +111,7 @@ export async function handleCustomAmountText(ctx: Context, text: string) {
     const verification = await binancePayService.verifyAndClaimBinanceOrderId(paymentId, rawOrderId, String(from.id));
 
     if (!verification.success) {
-      await ctx.reply(`❌ <b>Verification Failed</b>\n\n${escapeHtml(verification.message)}`, {
+      await ctx.reply(verification.message, {
         parse_mode: 'HTML',
         reply_markup: keyboards.binancePaymentActions(paymentId)
       });

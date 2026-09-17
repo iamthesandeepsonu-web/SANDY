@@ -143,7 +143,14 @@ export function extractAllLicenseKeys(input: any): string[] {
   return result;
 }
 
+let catalogCache: { products: LdProduct[]; timestamp: number } | null = null;
+const CATALOG_CACHE_TTL_MS = 60 * 1000; // 60 seconds
+
 export const licenseApiService = {
+  clearCache() {
+    catalogCache = null;
+  },
+
   getEndpoint(): string {
     const raw = settingsRepo.get('ld_api_endpoint', 'https://licencedashboard.shop/api/v1').trim();
     return raw.replace(/\/+$/, '');
@@ -227,7 +234,11 @@ export const licenseApiService = {
     };
   },
 
-  async getProducts(): Promise<{ success: boolean; products: LdProduct[]; message?: string }> {
+  async getProducts(forceRefresh = false): Promise<{ success: boolean; products: LdProduct[]; message?: string }> {
+    if (!forceRefresh && catalogCache && (Date.now() - catalogCache.timestamp < CATALOG_CACHE_TTL_MS)) {
+      return { success: true, products: catalogCache.products };
+    }
+
     const endpoint = this.getEndpoint();
     const token = this.getToken();
 
@@ -247,7 +258,7 @@ export const licenseApiService = {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
         },
-        timeout: 15000
+        timeout: 10000
       });
 
       const resData = response.data;
@@ -272,6 +283,7 @@ export const licenseApiService = {
             }
           }
         }
+        catalogCache = { products: flatProducts, timestamp: Date.now() };
         return { success: true, products: flatProducts };
       }
 
@@ -290,6 +302,7 @@ export const licenseApiService = {
             validity_days: p.validity_days
           });
         }
+        catalogCache = { products: flatProducts, timestamp: Date.now() };
         return { success: true, products: flatProducts };
       }
 
