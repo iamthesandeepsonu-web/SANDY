@@ -284,24 +284,12 @@ ${orderRes.bep20Address ? '5️⃣' : '4️⃣'} Click <b>🔢 Enter Binance Ord
 
   const kb = keyboards.binancePaymentActions(payment.id);
 
-  if (orderRes.qrDataUrl) {
-    const base64Data = orderRes.qrDataUrl.replace(/^data:image\/png;base64,/, '');
-    const buffer = Buffer.from(base64Data, 'base64');
-    if (ctx.callbackQuery) {
-      await ctx.deleteMessage().catch(() => {});
-    }
-    await ctx.replyWithPhoto(new InputFile(buffer, `binance-qr-${refId}.png`), {
-      caption: text,
-      parse_mode: 'HTML',
-      reply_markup: kb
-    });
-    return;
-  }
-
   if (ctx.callbackQuery) {
-    await ctx.editMessageText(text, { parse_mode: 'HTML', reply_markup: kb });
-    await ctx.answerCallbackQuery();
-    return;
+    try {
+      await ctx.editMessageText(text, { parse_mode: 'HTML', reply_markup: kb });
+      await ctx.answerCallbackQuery();
+      return;
+    } catch {}
   }
 
   await ctx.reply(text, { parse_mode: 'HTML', reply_markup: kb });

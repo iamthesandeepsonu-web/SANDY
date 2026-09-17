@@ -509,31 +509,20 @@ ${binanceData.bep20Address ? '5️⃣' : '4️⃣'} Click <b>🔢 Enter Binance 
 
     const kb = keyboards.binancePaymentActions(payment.id);
 
-    try {
-      if (binanceData.qrBase64) {
-        const buffer = Buffer.from(binanceData.qrBase64.replace(/^data:image\/\w+;base64,/, ''), 'base64');
-        if (ctx.callbackQuery) {
-          try {
-            await ctx.deleteMessage();
-          } catch {}
-        }
-        await ctx.replyWithPhoto(new InputFile(buffer, 'binance_qr.png'), {
-          caption: text,
-          parse_mode: 'HTML',
-          reply_markup: kb
-        });
-      } else {
+    if (ctx.callbackQuery) {
+      try {
         await ctx.editMessageText(text, {
           parse_mode: 'HTML',
           reply_markup: kb
         });
-      }
-    } catch {
-      await ctx.reply(text, {
-        parse_mode: 'HTML',
-        reply_markup: kb
-      });
+        return;
+      } catch {}
     }
+
+    await ctx.reply(text, {
+      parse_mode: 'HTML',
+      reply_markup: kb
+    });
   } catch (err: any) {
     console.error('Error generating direct Binance payment:', err);
     try {
