@@ -475,14 +475,13 @@ export async function handlePurchaseDirectBinance(ctx: Context, serviceId: strin
       paymentMethod: 'BINANCE_PAY',
       amount: validity.price,
       referenceId: refId,
-      qrPayload: binanceData.checkoutUrl || binanceData.prepayId,
+      qrPayload: binanceData.merchantId,
       metadata: {
         serviceId,
         validityId,
         productName: service.name,
         validityName: validity.name,
         priceUsd,
-        prepayId: binanceData.prepayId,
         bep20: binanceData.bep20Address
       }
     });

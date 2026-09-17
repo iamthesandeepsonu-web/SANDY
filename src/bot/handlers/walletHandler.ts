@@ -252,14 +252,8 @@ export async function handleBinancePayment(ctx: Context, amount: number) {
   const refId = 'BPAY' + Date.now().toString(36).toUpperCase() + crypto.randomBytes(3).toString('hex').toUpperCase();
   const priceUsd = settingsRepo.calculateUsd(amount);
 
-  const orderRes = await binancePayService.createOrder({
-    merchantTradeNo: refId,
-    orderAmount: priceUsd,
-    goodsTitle: `Wallet Top-Up (₹${amount})`
-  });
-
-  const binanceCfg = binancePayService.getConfig();
-  const merchantPayId = binanceCfg.merchantId || '433230697';
+  const binanceData = await binancePayService.generateOrderPayload(amount, priceUsd, refId);
+  const merchantPayId = binanceData.merchantId || '433230697';
 
   const payment = paymentRepo.create({
     userId: user.id,
@@ -267,8 +261,8 @@ export async function handleBinancePayment(ctx: Context, amount: number) {
     paymentMethod: 'BINANCE_PAY',
     amount,
     referenceId: refId,
-    qrPayload: orderRes.qrContent,
-    metadata: { prepayId: orderRes.prepayId, bep20: orderRes.bep20Address, priceUsd }
+    qrPayload: merchantPayId,
+    metadata: { bep20: binanceData.bep20Address, priceUsd }
   });
 
   const text = `
@@ -284,9 +278,9 @@ export async function handleBinancePayment(ctx: Context, amount: number) {
 1️⃣ <b>Binance Pay ID:</b>
 <code>${merchantPayId}</code>
 
-2️⃣ ${orderRes.bep20Address ? `<b>BEP-20 USDT Address:</b>\n<code>${orderRes.bep20Address}</code>\n\n3️⃣ ` : ''}Send exactly <b>$${priceUsd.toFixed(2)} USDT</b>.
-${orderRes.bep20Address ? '4️⃣' : '3️⃣'} Copy the <b>Binance Order ID / Transaction ID</b> from your Binance Pay receipt.
-${orderRes.bep20Address ? '5️⃣' : '4️⃣'} Click <b>🔢 Enter Binance Order ID / Txn ID</b> below to verify and get instant credit!
+2️⃣ ${binanceData.bep20Address ? `<b>BEP-20 USDT Address:</b>\n<code>${binanceData.bep20Address}</code>\n\n3️⃣ ` : ''}Send exactly <b>$${priceUsd.toFixed(2)} USDT</b>.
+${binanceData.bep20Address ? '4️⃣' : '3️⃣'} Copy the <b>Binance Order ID / Transaction ID</b> from your Binance Pay receipt.
+${binanceData.bep20Address ? '5️⃣' : '4️⃣'} Click <b>🔢 Enter Binance Order ID / Txn ID</b> below to verify and get instant credit!
 ━━━━━━━━━━━━━━━━━━━━
 `.trim();
 
@@ -308,17 +302,6 @@ export async function handleCheckPayment(ctx: Context, paymentId: string) {
   if (!payment) {
     await ctx.answerCallbackQuery({ text: 'Payment record not found.', show_alert: true });
     return;
-  }
-
-  // 1. If pending and Binance Pay, check live Binance API
-  if (payment.status === 'PENDING' && payment.payment_method === 'BINANCE_PAY') {
-    try {
-      const liveCheck = await binancePayService.queryOrder(payment.reference_id);
-      if (liveCheck.success && (liveCheck.status === 'PAID' || liveCheck.status === 'SUCCESS')) {
-        paymentRepo.completePayment(payment.id, liveCheck.transactionId);
-        payment = paymentRepo.getById(paymentId)!;
-      }
-    } catch {}
   }
 
   // 1b. If pending and UPI Auto, trigger an immediate IMAP email inbox check
