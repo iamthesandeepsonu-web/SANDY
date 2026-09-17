@@ -8,7 +8,9 @@ import { activeBot } from '../bot/bot.js';
 import { settingsRepo } from '../database/repositories/settingsRepo.js';
 import { paymentRepo } from '../database/repositories/paymentRepo.js';
 import { userRepo } from '../database/repositories/userRepo.js';
+import { cryptoDepositRepo } from '../database/repositories/cryptoDepositRepo.js';
 import { fulfillmentService } from './fulfillmentService.js';
+import { emailVerificationService } from './emailVerificationService.js';
 
 export interface BinancePayConfig {
   apiKey: string;
@@ -325,7 +327,7 @@ export const binancePayService = {
   },
 
   /**
-   * Verify Binance Order ID / Txn ID entered by Customer & Claim Instant Delivery / Top-up
+   * 100% Automated & Scam-Proof Binance Order ID Verification & Claim Engine
    */
   async verifyAndClaimBinanceOrderId(paymentId: string, rawOrderId: string, _optionalUserId?: string): Promise<{
     success: boolean;
@@ -338,11 +340,12 @@ export const binancePayService = {
     amountInr?: number;
     amountUsd?: number;
   }> {
+    const cfg = this.getConfig();
     const cleanOrderId = rawOrderId.trim().replace(/[^a-zA-Z0-9_-]/g, '');
     if (!cleanOrderId || cleanOrderId.length < 5) {
       return {
         success: false,
-        message: 'Invalid Binance Order ID. Please enter a valid 8-25 digit Order ID / Transaction ID from your Binance Pay receipt.'
+        message: '⚠️ Invalid Binance Order ID. Please enter the valid Order ID / Txn ID from your Binance Pay receipt.'
       };
     }
 
@@ -355,11 +358,11 @@ export const binancePayService = {
       return { success: false, message: 'This payment has already been verified and completed.' };
     }
 
-    // Anti-fraud duplicate check: Ensure Order ID has not been used before
+    // Anti-fraud duplicate check across completed payments
     if (paymentRepo.isExternalTxIdUsed(cleanOrderId)) {
       return {
         success: false,
-        message: `❌ This Binance Order ID (${cleanOrderId}) has already been redeemed! Each payment can only be verified once.`
+        message: `❌ This Binance Order ID (<code>${cleanOrderId}</code>) has already been redeemed! Each payment can only be claimed once.`
       };
     }
 
@@ -374,21 +377,38 @@ export const binancePayService = {
     const targetUserId = payment.user_id;
     const user = userRepo.getById(targetUserId);
 
-    // 1. Try Live Binance OpenAPI Check
-    const liveCheck = await this.queryOrder(payment.reference_id, meta.prepayId);
+    // 1. Check local recorded verified deposits (from Binance Email/IMAP)
+    let deposit = cryptoDepositRepo.getByOrderId(cleanOrderId);
 
-    if (liveCheck.success && (liveCheck.status === 'PAID' || liveCheck.status === 'SUCCESS')) {
-      const actualPaidUsd = liveCheck.orderAmount || expectedUsd;
+    // If not found in local DB yet, trigger an immediate real-time IMAP check
+    if (!deposit) {
+      try {
+        await emailVerificationService.checkEmails();
+        deposit = cryptoDepositRepo.getByOrderId(cleanOrderId);
+      } catch {}
+    }
 
-      // Strict Underpayment Check
-      if (actualPaidUsd < expectedUsd - 0.005) {
+    // 2. If verified deposit record found from Binance Email Alerts
+    if (deposit) {
+      if (deposit.is_claimed) {
         return {
           success: false,
-          message: `❌ <b>Underpayment Detected!</b>\n\n💵 <b>Required Amount:</b> $${expectedUsd.toFixed(2)} USDT\n💵 <b>Amount Received on Binance:</b> $${actualPaidUsd.toFixed(2)} USDT\n\n⚠️ You paid less than the required amount. Order cannot be completed until the exact amount ($${expectedUsd.toFixed(2)} USDT) is transferred.`
+          message: `❌ This Binance Order ID (<code>${cleanOrderId}</code>) was already claimed on our system!`
         };
       }
 
-      // Live amount verified -> Auto Complete
+      // STRICT SCAM-PROOF UNDERPAYMENT CHECK
+      if (deposit.amount_usd < (expectedUsd - 0.005)) {
+        return {
+          success: false,
+          message: `❌ <b>Underpayment Detected!</b>\n\n💵 <b>Required Price:</b> $${expectedUsd.toFixed(2)} USDT\n💵 <b>Amount Received on Binance:</b> $${deposit.amount_usd.toFixed(2)} USDT\n\n⚠️ You transferred less than the required amount. Order cannot be completed until the exact amount ($${expectedUsd.toFixed(2)} USDT) is transferred.`
+        };
+      }
+
+      // Mark deposit as claimed
+      cryptoDepositRepo.claimDeposit(cleanOrderId, payment.id);
+
+      // Auto-complete payment in database
       const completeRes = paymentRepo.completePayment(payment.id, cleanOrderId);
       const updatedPayment = completeRes.payment;
 
@@ -402,65 +422,77 @@ export const binancePayService = {
 
           return {
             success: true,
-            message: '✅ Binance Pay Verified & Product Delivered!',
+            message: '🎉 <b>Payment Auto-Verified & License Key Delivered!</b>',
             isOrderFulfilled: true,
             order: fulfillRes.order,
             licenseKey: fulfillRes.licenseKey || fulfillRes.order.license_key,
             amountInr: updatedPayment.amount,
-            amountUsd: expectedUsd
+            amountUsd: deposit.amount_usd
           };
         }
       }
 
       return {
         success: true,
-        message: `✅ Binance Pay Verified! ₹${updatedPayment.amount.toFixed(2)} credited to your wallet balance.`,
+        message: `🎉 <b>Payment Auto-Verified!</b> ₹${updatedPayment.amount.toFixed(2)} ($${deposit.amount_usd.toFixed(2)} USDT) has been credited to your wallet balance.`,
         isOrderFulfilled: false,
         walletBalance: user ? user.balance : updatedPayment.amount,
         amountInr: updatedPayment.amount,
-        amountUsd: expectedUsd
+        amountUsd: deposit.amount_usd
       };
     }
 
-    // 2. Direct manual transfer to Pay ID 433230697 (or US geoblocked):
-    // Save Txn ID in metadata and trigger Admin Real-Time Approval Alert on Telegram
-    meta.binanceTxnId = cleanOrderId;
-    db.prepare('UPDATE payments SET metadata = ? WHERE id = ?').run(JSON.stringify(meta), payment.id);
+    // 3. Fallback: Check Binance OpenAPI live endpoint
+    const liveCheck = await this.queryOrder(payment.reference_id, meta.prepayId);
+    if (liveCheck.success && (liveCheck.status === 'PAID' || liveCheck.status === 'SUCCESS')) {
+      const actualPaidUsd = liveCheck.orderAmount || expectedUsd;
 
-    if (activeBot && config.admin.telegramIds.length > 0) {
-      const adminKb = new InlineKeyboard()
-        .text(`✅ Approve ($${expectedUsd.toFixed(2)})`, `admin_approve_pay_${payment.id}`)
-        .text('❌ Reject', `admin_reject_pay_${payment.id}`);
+      // Strict Underpayment Check
+      if (actualPaidUsd < (expectedUsd - 0.005)) {
+        return {
+          success: false,
+          message: `❌ <b>Underpayment Detected!</b>\n\n💵 <b>Required Price:</b> $${expectedUsd.toFixed(2)} USDT\n💵 <b>Amount Received on Binance:</b> $${actualPaidUsd.toFixed(2)} USDT\n\n⚠️ You paid less than the required amount. Order cannot be completed until the exact amount ($${expectedUsd.toFixed(2)} USDT) is transferred.`
+        };
+      }
 
-      const alertText = `
-🚨 <b>BINANCE PAYMENT REVIEW REQUEST</b>
+      // Complete payment
+      const completeRes = paymentRepo.completePayment(payment.id, cleanOrderId);
+      const updatedPayment = completeRes.payment;
 
-👤 <b>User:</b> @${user?.username || 'NoUsername'} (ID: <code>${payment.telegram_id}</code>)
-🎮 <b>Product:</b> ${meta.productName || 'Wallet Top-Up'}
-${meta.validityName ? `⏳ <b>Plan:</b> ${meta.validityName}\n` : ''}💵 <b>Expected Amount:</b> <b>$${expectedUsd.toFixed(2)} USDT</b> (₹${payment.amount.toFixed(2)})
-🔢 <b>Submitted Order/Txn ID:</b> <code>${cleanOrderId}</code>
+      if (meta && meta.serviceId && meta.validityId) {
+        const fulfillRes = await fulfillmentService.processPurchase(targetUserId, meta.serviceId, meta.validityId);
+        if (fulfillRes.success && fulfillRes.order) {
+          meta.orderId = fulfillRes.order.id;
+          meta.licenseKey = fulfillRes.licenseKey || fulfillRes.order.license_key;
+          meta.binanceTxnId = cleanOrderId;
+          db.prepare('UPDATE payments SET metadata = ? WHERE id = ?').run(JSON.stringify(meta), updatedPayment.id);
 
-👉 <i>Please open Binance App ➔ Pay ➔ Payment History, verify if exact <b>$${expectedUsd.toFixed(2)} USDT</b> was received for this Order ID, and tap Approve or Reject:</i>
-`.trim();
-
-      for (const adminId of config.admin.telegramIds) {
-        try {
-          await activeBot.api.sendMessage(adminId, alertText, {
-            parse_mode: 'HTML',
-            reply_markup: adminKb
-          });
-        } catch (e: any) {
-          console.error(`Failed to send Binance payment alert to admin ${adminId}:`, e.message);
+          return {
+            success: true,
+            message: '🎉 <b>Payment Auto-Verified & License Key Delivered!</b>',
+            isOrderFulfilled: true,
+            order: fulfillRes.order,
+            licenseKey: fulfillRes.licenseKey || fulfillRes.order.license_key,
+            amountInr: updatedPayment.amount,
+            amountUsd: actualPaidUsd
+          };
         }
       }
+
+      return {
+        success: true,
+        message: `🎉 <b>Payment Auto-Verified!</b> ₹${updatedPayment.amount.toFixed(2)} credited to your wallet balance.`,
+        isOrderFulfilled: false,
+        walletBalance: user ? user.balance : updatedPayment.amount,
+        amountInr: updatedPayment.amount,
+        amountUsd: actualPaidUsd
+      };
     }
 
+    // 4. If transaction was not found on Binance (Fake/Invalid ID or unconfirmed)
     return {
-      success: true,
-      isPendingReview: true,
-      message: `⏳ <b>Binance Payment Submitted for Verification</b>\n\n🆔 <b>Order ID / Txn ID:</b> <code>${cleanOrderId}</code>\n💵 <b>Required Amount:</b> <b>$${expectedUsd.toFixed(2)} USDT</b>\n\n<i>Your payment receipt is being verified against our Binance Pay records to confirm the exact amount ($${expectedUsd.toFixed(2)} USDT). Your key will be delivered as soon as verification completes!</i>`,
-      amountInr: payment.amount,
-      amountUsd: expectedUsd
+      success: false,
+      message: `❌ <b>Payment Record Not Found on Binance</b>\n\nNo deposit record was found for Order ID <code>${cleanOrderId}</code>.\n\n📌 <b>To complete your payment:</b>\n1️⃣ Ensure you transferred exact <b>$${expectedUsd.toFixed(2)} USDT</b> to Binance Pay ID <code>${cfg.merchantId || '433230697'}</code>.\n2️⃣ Copy the exact <b>Order ID / TxID</b> from your Binance Pay receipt.\n3️⃣ If you just transferred, please wait 30 seconds and click <b>Enter Binance Order ID</b> again.`
     };
   }
 };

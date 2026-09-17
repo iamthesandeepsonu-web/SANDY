@@ -155,6 +155,20 @@ export function initDatabase() {
     CREATE INDEX IF NOT EXISTS idx_payments_reference ON payments(reference_id);
     CREATE INDEX IF NOT EXISTS idx_payments_user ON payments(user_id);
 
+    CREATE TABLE IF NOT EXISTS verified_crypto_deposits (
+      id TEXT PRIMARY KEY,
+      order_id TEXT UNIQUE NOT NULL,
+      amount_usd REAL NOT NULL,
+      currency TEXT DEFAULT 'USDT',
+      sender_info TEXT,
+      source TEXT DEFAULT 'EMAIL',
+      is_claimed INTEGER DEFAULT 0,
+      claimed_by_payment_id TEXT,
+      received_at TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_crypto_order ON verified_crypto_deposits(order_id);
+
     CREATE TABLE IF NOT EXISTS wallet_transactions (
       id TEXT PRIMARY KEY,
       user_id TEXT NOT NULL,
