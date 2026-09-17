@@ -141,20 +141,32 @@ export const binanceApiService = {
         }));
       } catch (err: any) {
         const status = err.response?.status;
-        const msg = err.response?.data?.msg || err.response?.data?.message || err.message;
+        const data = err.response?.data;
+        const msg = data?.msg || data?.message || err.message;
+        const code = data?.code;
         lastErrorMsg = status ? `HTTP ${status}: ${msg}` : msg;
 
-        // If status is 451 (geo-restricted from US cloud), try relay URL or next endpoint
-        if (status !== 451) {
-          // If it's an invalid API key / authentication error, break immediately
-          if (status === 401 || (err.response?.data?.code === -2014 || err.response?.data?.code === -2015)) {
-            throw new Error(`Binance API Authentication Failed: ${msg}`);
-          }
+        // If it's an invalid API key / authentication error, throw immediately
+        if (
+          status === 401 ||
+          code === -2008 ||
+          code === -2014 ||
+          code === -2015 ||
+          code === -1022 ||
+          code === -1100 ||
+          (typeof msg === 'string' && (
+            msg.toLowerCase().includes('api-key') ||
+            msg.toLowerCase().includes('signature') ||
+            msg.toLowerCase().includes('unauthorized') ||
+            msg.toLowerCase().includes('invalid api')
+          ))
+        ) {
+          throw new Error(`Binance API Authentication Failed: ${msg}`);
         }
       }
     }
 
-    // 2. If direct endpoints failed (e.g. 451 geo-block from US cloud) and Relay URL is configured, use relay
+    // 2. If direct endpoints failed and Relay URL is configured, use relay
     if (creds.relayUrl) {
       try {
         const relayRes = await axios.post(creds.relayUrl, {
@@ -162,8 +174,8 @@ export const binanceApiService = {
           apiKey: creds.apiKey,
           secretKey: creds.secretKey,
           limit,
-          startTimestamp: options.startTimestamp,
-          endTimestamp: options.endTimestamp
+          startTimestamp,
+          endTimestamp
         }, {
           headers: { 'Content-Type': 'application/json' },
           timeout: 8000
@@ -187,7 +199,7 @@ export const binanceApiService = {
     }
 
     if (lastErrorMsg) {
-      console.warn(`Binance fetchPayTransactions notice: ${lastErrorMsg}`);
+      throw new Error(`Binance API Error (${lastErrorMsg})`);
     }
     return [];
   },
@@ -215,7 +227,7 @@ export const binanceApiService = {
       const res = await axios.post(`${this.OPENAPI_BASE_URL}/binancepay/openapi/v2/order/query`, body, {
         headers: {
           'Content-Type': 'application/json',
-          'BinancePay-Timestamp': timestamp,
+          'BinancePay-Timestamp': String(timestamp),
           'BinancePay-Nonce': nonce,
           'BinancePay-Certificate-SN': creds.apiKey,
           'BinancePay-Signature': signature
@@ -265,7 +277,6 @@ export const binanceApiService = {
       }
 
       const errDetail = err.response?.data || err.message;
-      console.warn(`OpenAPI order query for ${merchantTradeNo} returned:`, errDetail);
       return null;
     }
   },
@@ -307,28 +318,13 @@ export const binanceApiService = {
       serverTimeOk = true;
     }
 
-    // 2. Test SAPI Pay Transactions Permissions
+    // 2. Test SAPI Pay Transactions Permissions (Strict Authentication Check)
     try {
       const txns = await this.fetchPayTransactions(creds, { limit: 5 });
       sapiAuthOk = true;
       transactionsCount = txns.length;
     } catch (e: any) {
       const errStr = e.message || '';
-      // If error is geo-restriction (451) but credentials format is valid
-      if (errStr.includes('451') || errStr.includes('geo') || errStr.includes('Legal')) {
-        sapiAuthOk = true; // Mark as configured with proxy/relay notice
-        openApiOk = true;
-        return {
-          success: true,
-          serverTimeOk: true,
-          sapiAuthOk: true,
-          openApiOk: true,
-          transactionsCount: 0,
-          message: '🟢 Binance configuration saved! (Cloud host geo-restriction detected — relay proxy enabled)',
-          latencyMs
-        };
-      }
-
       return {
         success: false,
         serverTimeOk,
@@ -351,7 +347,7 @@ export const binanceApiService = {
       const probeRes = await axios.post(`${this.OPENAPI_BASE_URL}/binancepay/openapi/v2/order/query`, body, {
         headers: {
           'Content-Type': 'application/json',
-          'BinancePay-Timestamp': timestamp,
+          'BinancePay-Timestamp': String(timestamp),
           'BinancePay-Nonce': nonce,
           'BinancePay-Certificate-SN': creds.apiKey,
           'BinancePay-Signature': signature
@@ -363,7 +359,7 @@ export const binanceApiService = {
         openApiOk = true;
       }
     } catch (e: any) {
-      if (e.response && (e.response.status === 400 || e.response.status === 404 || e.response.data?.code || e.response.status === 451)) {
+      if (e.response && (e.response.status === 400 || e.response.status === 404 || e.response.data?.code)) {
         openApiOk = true;
       }
     }
