@@ -467,36 +467,52 @@
               <div class="card-header-styled">
                 <h3><i class="fa-brands fa-bitcoin"></i> Binance Pay Settings</h3>
                 <button class="btn btn-sm btn-secondary" id="btn-test-binance-connection">
-                  <i class="fa-solid fa-plug"></i> Test Connection
+                  <i class="fa-solid fa-shield-halved"></i> Integrity Check
                 </button>
               </div>
 
               <form id="binance-settings-form">
                 <div class="form-group">
-                  <label for="binance-api-key">Binance API Key</label>
-                  <input type="text" id="binance-api-key" class="form-control" placeholder="Enter Binance Certificate / API Key">
+                  <label for="binance-api-key">Binance API Key (Certificate SN)</label>
+                  <input type="text" id="binance-api-key" class="form-control font-mono" placeholder="Enter Binance Certificate / API Key">
                 </div>
                 <div class="form-group">
                   <label for="binance-secret-key">Binance Secret Key</label>
                   <div class="password-input-wrap">
-                    <input type="password" id="binance-secret-key" class="form-control" placeholder="Enter Secret Key">
+                    <input type="password" id="binance-secret-key" class="form-control font-mono" placeholder="Enter Secret Key">
                     <button type="button" class="btn-toggle-pwd" onclick="togglePasswordVisibility('binance-secret-key')"><i class="fa-solid fa-eye"></i></button>
                   </div>
                 </div>
-                <div class="form-group">
-                  <label for="binance-merchant-id">Binance PID / Merchant ID</label>
-                  <input type="text" id="binance-merchant-id" class="form-control" placeholder="e.g., 982138472">
+                <div class="form-grid-2">
+                  <div class="form-group">
+                    <label for="binance-merchant-id">Binance Pay ID / Merchant UID</label>
+                    <input type="text" id="binance-merchant-id" class="form-control" placeholder="e.g., 433230697">
+                  </div>
+                  <div class="form-group">
+                    <label for="binance-bep20">BEP-20 (USDT) Address (Fallback)</label>
+                    <input type="text" id="binance-bep20" class="form-control font-mono" placeholder="0x...">
+                  </div>
                 </div>
-                <div class="form-group">
-                  <label for="binance-bep20">BEP-20 (USDT) Deposit Address (Fallback)</label>
-                  <input type="text" id="binance-bep20" class="form-control" placeholder="0x...">
+                <div class="form-grid-2">
+                  <div class="form-group">
+                    <label for="binance-relay-url">Webhook / Callback URL</label>
+                    <input type="text" id="binance-relay-url" class="form-control" placeholder="http://domain.com/api/payments/webhook/binance">
+                  </div>
+                  <div class="form-group">
+                    <label for="binance-webhook-secret">Webhook Secret (Optional)</label>
+                    <input type="password" id="binance-webhook-secret" class="form-control font-mono" placeholder="Webhook Signature Secret">
+                  </div>
                 </div>
-                <div class="form-group">
-                  <label for="binance-relay-url">Relay URL / Webhook Callback URL</label>
-                  <input type="text" id="binance-relay-url" class="form-control" placeholder="http://domain.com/api/payments/webhook/binance">
-                </div>
-                <div class="card-action-bar">
-                  <button type="submit" class="btn btn-primary">Save Binance Config</button>
+
+                <div id="binance-integrity-result" class="alert hidden" style="margin-top: 15px; font-size: 13px;"></div>
+
+                <div class="card-action-bar" style="margin-top: 15px; display: flex; gap: 10px; flex-wrap: wrap;">
+                  <button type="button" class="btn btn-outline" id="btn-reconcile-all-binance">
+                    <i class="fa-solid fa-arrows-rotate"></i> Reconcile Pending
+                  </button>
+                  <button type="submit" class="btn btn-primary">
+                    <i class="fa-solid fa-floppy-disk"></i> Save & Validate Config
+                  </button>
                 </div>
               </form>
             </div>

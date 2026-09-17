@@ -1,44 +1,59 @@
-import { settingsRepo } from '../database/repositories/settingsRepo.js';
+import { binanceConfigService, BinanceCredentials, MaskedBinanceConfig } from './binance/binanceConfigService.js';
+import { binanceApiService, BinancePayTransaction } from './binance/binanceApiService.js';
+import { binanceVerificationService, BinanceVerificationResult } from './binance/binanceVerificationService.js';
+import { binanceWebhookService } from './binance/binanceWebhookService.js';
+import { binanceIntegrityCheckService, IntegrityCheckReport } from './binance/binanceIntegrityCheckService.js';
+import { binanceReconciliationService } from './binance/binanceReconciliationService.js';
 
 export interface BinancePayConfig {
   apiKey: string;
   secretKey: string;
   merchantId: string;
   bep20Address: string;
+  webhookSecret: string;
   relayUrl: string;
   isConfigured: boolean;
 }
 
 /**
- * Binance Payment Service Stub (Backend Reset)
- * All previous API integrations, SAPI queries, OpenAPI queries, and webhook handlers
- * have been completely removed awaiting new implementation specifications.
+ * Unified Binance Payment Gateway Service
+ * Production-Ready Backend integrating official Binance OpenAPI & SAPI
  */
 export const binancePayService = {
   getConfig(): BinancePayConfig {
-    const apiKey = (settingsRepo.get('binance_api_key', '') || process.env.BINANCE_API_KEY || '').trim();
-    const secretKey = (settingsRepo.get('binance_secret_key', '') || process.env.BINANCE_SECRET_KEY || '').trim();
-    const merchantId = (settingsRepo.get('binance_merchant_id', '') || process.env.BINANCE_PAY_ID || '').trim();
-    const bep20Address = (settingsRepo.get('binance_bep20_address', '') || process.env.BINANCE_BEP20_ADDRESS || '').trim();
-    const relayUrl = (settingsRepo.get('binance_relay_url', '')).trim();
-    const isConfigured = settingsRepo.getBoolean('binance_is_configured', false);
-
-    return {
-      apiKey,
-      secretKey,
-      merchantId,
-      bep20Address,
-      relayUrl,
-      isConfigured: isConfigured && Boolean(apiKey && secretKey)
-    };
+    return binanceConfigService.getConfig();
   },
 
-  async testConnection(): Promise<{ success: boolean; message: string; accountStatus?: string }> {
-    return {
-      success: false,
-      message: 'Binance payment gateway backend is reset and awaiting new configuration.',
-      accountStatus: 'Reset / Pending Setup'
-    };
+  getMaskedConfig(): MaskedBinanceConfig {
+    return binanceConfigService.getMaskedConfig();
+  },
+
+  async updateConfigSafely(
+    newConfig: {
+      apiKey?: string;
+      secretKey?: string;
+      merchantId?: string;
+      bep20Address?: string;
+      webhookSecret?: string;
+      relayUrl?: string;
+    },
+    adminUser = 'admin'
+  ): Promise<{ success: boolean; message: string }> {
+    return binanceConfigService.updateConfigSafely(
+      newConfig,
+      async (creds) => {
+        const test = await binanceApiService.testConnectivity(creds);
+        return {
+          success: test.success,
+          message: test.message
+        };
+      },
+      adminUser
+    );
+  },
+
+  async fetchRecentTransactions(limit = 20): Promise<BinancePayTransaction[]> {
+    return binanceApiService.fetchPayTransactions(undefined, { limit });
   },
 
   async generateOrderPayload(_amountInr: number, _amountUsd: number, _refId: string): Promise<{
@@ -53,22 +68,42 @@ export const binancePayService = {
   },
 
   /**
-   * Placeholder verification stub - old verification and claim logic removed
+   * Verified Order ID claim with anti-fraud duplicate checks and atomic fulfillment
    */
-  async verifyAndClaimBinanceOrderId(_paymentId: string, _rawOrderId: string, _optionalUserId?: string): Promise<{
-    success: boolean;
-    message: string;
-    isPendingReview?: boolean;
-    isOrderFulfilled?: boolean;
-    order?: any;
-    licenseKey?: string;
-    walletBalance?: number;
-    amountInr?: number;
-    amountUsd?: number;
-  }> {
-    return {
-      success: false,
-      message: '⚠️ <b>Binance Payment Gateway Reset</b>\n\nThe Binance payment gateway backend is currently undergoing a clean reset and setup. Please use UPI payment or contact support.'
-    };
+  async verifyAndClaimBinanceOrderId(
+    paymentId: string,
+    rawOrderId: string,
+    optionalUserId?: string
+  ): Promise<BinanceVerificationResult> {
+    return binanceVerificationService.verifyAndClaimPayment(paymentId, rawOrderId, optionalUserId);
+  },
+
+  /**
+   * Run full multi-point diagnostic Integrity Check
+   */
+  async testConnection(adminUser = 'admin'): Promise<IntegrityCheckReport> {
+    return binanceIntegrityCheckService.runFullIntegrityCheck(undefined, adminUser);
+  },
+
+  async runIntegrityCheck(adminUser = 'admin'): Promise<IntegrityCheckReport> {
+    return binanceIntegrityCheckService.runFullIntegrityCheck(undefined, adminUser);
+  },
+
+  /**
+   * Reconcile pending payments
+   */
+  async reconcilePayment(paymentId: string, adminUser = 'admin') {
+    return binanceReconciliationService.reconcilePayment(paymentId, adminUser);
+  },
+
+  async reconcileAllPending(adminUser = 'admin') {
+    return binanceReconciliationService.reconcileAllPending(adminUser);
+  },
+
+  /**
+   * Webhook processing
+   */
+  async handleWebhook(rawBody: string, headers: Record<string, string | string[] | undefined>) {
+    return binanceWebhookService.handleWebhook(rawBody, headers);
   }
 };

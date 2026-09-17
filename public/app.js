@@ -536,6 +536,8 @@ async function loadPaymentsData() {
         if (bepEl) bepEl.value = cfgRes.binance.bep20Address || '';
         const relayEl = document.getElementById('binance-relay-url');
         if (relayEl) relayEl.value = cfgRes.binance.relayUrl || '';
+        const whSecEl = document.getElementById('binance-webhook-secret');
+        if (whSecEl) whSecEl.value = cfgRes.binance.webhookSecretMasked || '';
       }
       if (cfgRes.emailWorker) {
         const ew = cfgRes.emailWorker;
@@ -570,15 +572,22 @@ async function loadPaymentsData() {
           <tr>
             <td><code>${escapeHtml(p.reference_id)}</code></td>
             <td><strong>${escapeHtml(p.user_name || p.telegram_id)}</strong></td>
-            <td><span class="badge badge-purple">${p.payment_method}</span></td>
+            <td><span class="badge ${p.payment_method === 'BINANCE_PAY' ? 'badge-warning' : 'badge-purple'}">${p.payment_method}</span></td>
             <td><strong>₹${p.amount.toFixed(2)}</strong></td>
             <td><span class="badge ${p.status === 'COMPLETED' ? 'badge-success' : (p.status === 'PENDING' ? 'badge-warning' : 'badge-danger')}">${p.status}</span></td>
             <td><small class="text-muted">${new Date(p.created_at).toLocaleString()}</small></td>
             <td>
               ${p.status === 'PENDING' ? `
-                <button class="btn btn-sm btn-primary" onclick="approvePayment('${p.id}')">
-                  <i class="fa-solid fa-check"></i> Approve & Credit
-                </button>
+                <div style="display:flex; gap:5px; flex-wrap:wrap;">
+                  ${p.payment_method === 'BINANCE_PAY' ? `
+                    <button class="btn btn-sm btn-outline" onclick="reconcileBinancePayment('${p.id}')" title="Query Binance API for live payment">
+                      <i class="fa-solid fa-arrows-rotate"></i> Reconcile
+                    </button>
+                  ` : ''}
+                  <button class="btn btn-sm btn-primary" onclick="approvePayment('${p.id}')">
+                    <i class="fa-solid fa-check"></i> Approve
+                  </button>
+                </div>
               ` : '<span class="text-muted">—</span>'}
             </td>
           </tr>
@@ -1204,22 +1213,76 @@ function setupEventListeners() {
     const merchantId = document.getElementById('binance-merchant-id').value;
     const bep20Address = document.getElementById('binance-bep20').value;
     const relayUrl = document.getElementById('binance-relay-url').value;
+    const webhookSecret = document.getElementById('binance-webhook-secret')?.value;
 
     try {
       const res = await api('/settings/payments/binance', {
         method: 'POST',
-        body: JSON.stringify({ apiKey, secretKey, merchantId, bep20Address, relayUrl })
+        body: JSON.stringify({ apiKey, secretKey, merchantId, bep20Address, relayUrl, webhookSecret })
       });
-      showToast(res.message);
+      showToast(res.message, res.success ? 'success' : 'error');
+      if (res.success) {
+        loadPaymentsData();
+      }
     } catch (err) {
       showToast(err.message, 'error');
     }
   });
 
   safeOn('btn-test-binance-connection', 'click', async () => {
+    const resultBox = document.getElementById('binance-integrity-result');
+    if (resultBox) {
+      resultBox.className = 'alert alert-info';
+      resultBox.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Running comprehensive live Binance Integrity Check...';
+      resultBox.classList.remove('hidden');
+    }
+
     try {
       const res = await api('/settings/payments/binance/test', { method: 'POST' });
       showToast(res.message, res.success ? 'success' : 'error');
+
+      if (resultBox && res.report) {
+        const report = res.report;
+        resultBox.className = report.success ? 'alert alert-success' : 'alert alert-warning';
+        
+        let html = `
+          <div style="font-weight:600; margin-bottom:8px; display:flex; justify-content:space-between; align-items:center;">
+            <span>${escapeHtml(report.summaryMessage)}</span>
+            <span style="font-size:11px; opacity:0.8;">Latency: ${report.latencyMs}ms</span>
+          </div>
+          <table style="width:100%; font-size:12px; border-collapse:collapse; margin-top:6px;">
+        `;
+
+        for (const check of report.checks) {
+          const badgeColor = check.status === 'PASS' ? '#10b981' : (check.status === 'WARN' ? '#f59e0b' : '#ef4444');
+          const icon = check.status === 'PASS' ? '✓ PASS' : (check.status === 'WARN' ? '⚠ WARN' : '✕ FAIL');
+          html += `
+            <tr style="border-bottom:1px solid rgba(255,255,255,0.06); padding:4px 0;">
+              <td style="padding:4px 0; font-weight:500;">${escapeHtml(check.name)}</td>
+              <td style="padding:4px 8px; color:${badgeColor}; font-weight:600; font-family:monospace;">${icon}</td>
+              <td style="padding:4px 0; color:rgba(255,255,255,0.8);">${escapeHtml(check.message)}</td>
+            </tr>
+          `;
+        }
+
+        html += `</table>`;
+        resultBox.innerHTML = html;
+      }
+    } catch (err) {
+      showToast(err.message, 'error');
+      if (resultBox) {
+        resultBox.className = 'alert alert-danger';
+        resultBox.innerHTML = `✕ Integrity Check Error: ${escapeHtml(err.message)}`;
+      }
+    }
+  });
+
+  safeOn('btn-reconcile-all-binance', 'click', async () => {
+    if (!confirm('Reconcile all pending Binance payments against live transactions?')) return;
+    try {
+      const res = await api('/settings/payments/binance/reconcile', { method: 'POST' });
+      showToast(`Reconciliation complete: ${res.reconciledCount} payments verified & completed!`, 'success');
+      loadPaymentsData();
     } catch (err) {
       showToast(err.message, 'error');
     }
@@ -2280,6 +2343,17 @@ window.approvePayment = async function(paymentId) {
   try {
     const res = await api(`/payments/${paymentId}/approve`, { method: 'POST' });
     showToast(res.message, res.success ? 'success' : 'error');
+    loadPaymentsData();
+  } catch (err) {
+    showToast(err.message, 'error');
+  }
+};
+
+window.reconcileBinancePayment = async function(paymentId) {
+  try {
+    showToast('Querying Binance API for payment verification...', 'info');
+    const res = await api(`/settings/payments/binance/reconcile/${paymentId}`, { method: 'POST' });
+    showToast(res.message, res.success ? 'success' : 'warning');
     loadPaymentsData();
   } catch (err) {
     showToast(err.message, 'error');

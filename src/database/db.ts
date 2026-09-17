@@ -202,6 +202,34 @@ export function initDatabase() {
     );
 
     CREATE INDEX IF NOT EXISTS idx_broadcasts_created ON broadcast_campaigns(created_at);
+
+    CREATE TABLE IF NOT EXISTS admin_audit_logs (
+      id TEXT PRIMARY KEY,
+      admin_user TEXT NOT NULL,
+      action TEXT NOT NULL,
+      details TEXT,
+      ip_address TEXT,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_admin_audit_time ON admin_audit_logs(created_at);
+
+    CREATE TABLE IF NOT EXISTS binance_payment_logs (
+      id TEXT PRIMARY KEY,
+      payment_id TEXT NOT NULL,
+      reference_id TEXT NOT NULL,
+      binance_order_id TEXT,
+      event_type TEXT NOT NULL, -- 'CREATED', 'VERIFICATION_ATTEMPT', 'VERIFIED', 'FAILED', 'WEBHOOK_RECEIVED', 'RECONCILED'
+      amount_usd REAL,
+      amount_inr REAL,
+      status TEXT NOT NULL,
+      details TEXT,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_bpay_logs_payment ON binance_payment_logs(payment_id);
+    CREATE INDEX IF NOT EXISTS idx_bpay_logs_ref ON binance_payment_logs(reference_id);
+    CREATE INDEX IF NOT EXISTS idx_bpay_logs_order ON binance_payment_logs(binance_order_id);
   `);
 
   // Default system settings
@@ -218,6 +246,7 @@ export function initDatabase() {
     { key: 'binance_secret_key', value: '' },
     { key: 'binance_merchant_id', value: '' },
     { key: 'binance_bep20_address', value: '' },
+    { key: 'binance_webhook_secret', value: '' },
     { key: 'binance_relay_url', value: '' },
     { key: 'binance_is_configured', value: 'false' },
     { key: 'upi_merchant_vpa', value: 'iamsandeepjha@fam' },

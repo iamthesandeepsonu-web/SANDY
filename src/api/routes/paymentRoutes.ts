@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { paymentRepo } from '../../database/repositories/paymentRepo.js';
 import { settingsRepo } from '../../database/repositories/settingsRepo.js';
 import { fulfillmentService } from '../../services/fulfillmentService.js';
+import { binancePayService } from '../../services/binancePayService.js';
 import { activeBot } from '../../bot/bot.js';
 import { keyboards } from '../../bot/keyboards.js';
 import { escapeHtml } from '../../bot/handlers/shopHandler.js';
@@ -141,4 +142,19 @@ paymentRoutes.post('/webhook/upi', async (req, res) => {
   }
 
   return res.json({ success: true, message: 'Ignored webhook status' });
+});
+
+// Webhook for Binance Pay Gateway
+paymentRoutes.post('/webhook/binance', async (req, res) => {
+  try {
+    const rawBody = typeof req.body === 'string' ? req.body : JSON.stringify(req.body);
+    const result = await binancePayService.handleWebhook(rawBody, req.headers);
+    return res.json(result);
+  } catch (err: any) {
+    console.error('Binance webhook processing error:', err);
+    return res.status(500).json({
+      returnCode: 'FAIL',
+      returnMessage: err.message
+    });
+  }
 });

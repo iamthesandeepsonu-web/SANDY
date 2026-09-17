@@ -2,12 +2,13 @@ import { Router } from 'express';
 import { settingsRepo } from '../../database/repositories/settingsRepo.js';
 import { binancePayService } from '../../services/binancePayService.js';
 import { emailVerificationService } from '../../services/emailVerificationService.js';
+import { auditRepo } from '../../database/repositories/auditRepo.js';
 import { requireAdmin } from '../middlewares/authMiddleware.js';
 
 export const paymentSettingsRoutes = Router();
 
 paymentSettingsRoutes.get('/', requireAdmin, (req, res) => {
-  const binanceConfig = binancePayService.getConfig();
+  const binanceMasked = binancePayService.getMaskedConfig();
   const upiVpa = settingsRepo.get('upi_merchant_vpa', 'iamsandeepjha@fam');
   const upiName = settingsRepo.get('upi_merchant_name', 'SANDEEP KUMAR JHA');
   const upiSecret = settingsRepo.get('upi_webhook_secret', 'upi_secret_key_123');
@@ -16,14 +17,7 @@ paymentSettingsRoutes.get('/', requireAdmin, (req, res) => {
 
   return res.json({
     success: true,
-    binance: {
-      apiKeyMasked: binanceConfig.apiKey ? binanceConfig.apiKey.slice(0, 6) + '...' + binanceConfig.apiKey.slice(-4) : '',
-      secretKeyConfigured: Boolean(binanceConfig.secretKey),
-      merchantId: binanceConfig.merchantId,
-      bep20Address: binanceConfig.bep20Address,
-      relayUrl: binanceConfig.relayUrl,
-      isConfigured: binanceConfig.isConfigured
-    },
+    binance: binanceMasked,
     upi: {
       merchantVpa: upiVpa,
       merchantName: upiName,
@@ -34,41 +28,44 @@ paymentSettingsRoutes.get('/', requireAdmin, (req, res) => {
   });
 });
 
-paymentSettingsRoutes.post('/binance', requireAdmin, (req, res) => {
-  const { apiKey, secretKey, merchantId, bep20Address, relayUrl } = req.body;
+/**
+ * Safe Live Configuration Update with Pre-Validation
+ */
+paymentSettingsRoutes.post('/binance', requireAdmin, async (req, res) => {
+  const { apiKey, secretKey, merchantId, bep20Address, webhookSecret, relayUrl } = req.body;
+  const adminUser = (req as any).user?.username || 'admin';
 
-  if (apiKey !== undefined && apiKey.trim() && !apiKey.includes('...')) {
-    settingsRepo.set('binance_api_key', apiKey.trim());
-  }
-  if (secretKey !== undefined && secretKey.trim()) {
-    settingsRepo.set('binance_secret_key', secretKey.trim());
-  }
-  if (merchantId !== undefined) {
-    settingsRepo.set('binance_merchant_id', merchantId.trim());
-  }
-  if (bep20Address !== undefined) {
-    settingsRepo.set('binance_bep20_address', bep20Address.trim());
-  }
-  if (relayUrl !== undefined) {
-    settingsRepo.set('binance_relay_url', relayUrl.trim());
-  }
-
-  settingsRepo.set('binance_is_configured', 'true');
-
-  return res.json({
-    success: true,
-    message: 'Binance Pay configuration saved successfully!'
-  });
-});
-
-paymentSettingsRoutes.post('/binance/test', requireAdmin, async (req, res) => {
   try {
-    const result = await binancePayService.testConnection();
+    const result = await binancePayService.updateConfigSafely(
+      { apiKey, secretKey, merchantId, bep20Address, webhookSecret, relayUrl },
+      adminUser
+    );
+
     return res.json({
       success: result.success,
-      status: result.success ? 'Connected / Working' : 'Connection Failed / Not Working',
-      message: result.message,
-      accountStatus: result.accountStatus
+      message: result.message
+    });
+  } catch (err: any) {
+    return res.status(400).json({
+      success: false,
+      message: `Failed to update configuration: ${err.message}`
+    });
+  }
+});
+
+/**
+ * Multi-Point Live Integrity Check / Diagnostic Endpoint
+ */
+paymentSettingsRoutes.post('/binance/test', requireAdmin, async (req, res) => {
+  const adminUser = (req as any).user?.username || 'admin';
+  try {
+    const report = await binancePayService.runIntegrityCheck(adminUser);
+    return res.json({
+      success: report.success,
+      report,
+      status: report.success ? 'Connected / Working' : 'Connection Failed / Not Working',
+      message: report.summaryMessage,
+      accountStatus: report.accountStatus
     });
   } catch (err: any) {
     return res.json({
@@ -77,6 +74,54 @@ paymentSettingsRoutes.post('/binance/test', requireAdmin, async (req, res) => {
       message: err.message
     });
   }
+});
+
+/**
+ * Reconcile single pending Binance payment
+ */
+paymentSettingsRoutes.post('/binance/reconcile/:id', requireAdmin, async (req, res) => {
+  const paymentId = String(req.params.id);
+  const adminUser = (req as any).user?.username || 'admin';
+
+  try {
+    const result = await binancePayService.reconcilePayment(paymentId, adminUser);
+    return res.json(result);
+  } catch (err: any) {
+    return res.status(500).json({
+      success: false,
+      message: err.message
+    });
+  }
+});
+
+/**
+ * Batch reconcile all pending Binance payments
+ */
+paymentSettingsRoutes.post('/binance/reconcile', requireAdmin, async (req, res) => {
+  const adminUser = (req as any).user?.username || 'admin';
+  try {
+    const result = await binancePayService.reconcileAllPending(adminUser);
+    return res.json({
+      success: true,
+      ...result
+    });
+  } catch (err: any) {
+    return res.status(500).json({
+      success: false,
+      message: err.message
+    });
+  }
+});
+
+/**
+ * Binance Payment & Audit Logs
+ */
+paymentSettingsRoutes.get('/binance/logs', requireAdmin, (req, res) => {
+  const paymentId = req.query.paymentId ? String(req.query.paymentId) : undefined;
+  const limit = req.query.limit ? parseInt(String(req.query.limit), 10) : 50;
+
+  const logs = auditRepo.listBinanceLogs(paymentId, limit);
+  return res.json({ success: true, logs });
 });
 
 paymentSettingsRoutes.post('/upi', requireAdmin, (req, res) => {
