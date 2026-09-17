@@ -104,4 +104,21 @@ emailVerificationService.start().catch((err) => {
 // Start 12:01 AM IST Daily Automated Backup Scheduler
 backupService.startScheduler();
 
+// Keep-Alive Self-Ping Engine (Prevents free cloud hosts like Render/Koyeb/Glitch from sleeping)
+const keepAliveUrl = process.env.RENDER_EXTERNAL_URL || process.env.PUBLIC_URL || process.env.SERVER_URL;
+if (keepAliveUrl) {
+  const targetUrl = keepAliveUrl.endsWith('/api/health') ? keepAliveUrl : `${keepAliveUrl.replace(/\/$/, '')}/api/health`;
+  console.log(`⏱️ Keep-Alive service activated for URL: ${targetUrl} (Pinging every 10 mins)`);
+  setInterval(async () => {
+    try {
+      const axiosMod = await import('axios');
+      const axiosClient = axiosMod.default || axiosMod;
+      await axiosClient.get(targetUrl, { timeout: 10000 });
+      console.log(`💓 Keep-alive ping sent to ${targetUrl}`);
+    } catch (err: any) {
+      console.log(`⚠️ Keep-alive ping error:`, err.message);
+    }
+  }, 10 * 60 * 1000); // Every 10 minutes
+}
+
 export { app, server };
