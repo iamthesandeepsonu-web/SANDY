@@ -1,17 +1,27 @@
 import { Context } from 'grammy';
 import { userRepo } from '../../database/repositories/userRepo.js';
+import { currencyService } from '../../services/currencyService.js';
 import { keyboards } from '../keyboards.js';
 
 export async function handleProfile(ctx: Context) {
   const from = ctx.from;
   if (!from) return;
 
-  const user = userRepo.upsertFromTelegram(from.id, from.username, from.first_name);
+  const user = userRepo.upsertFromTelegram(from.id, from.username, from.first_name, from.language_code);
+  const region = currencyService.detectUserRegion(from, user);
   const joinedDate = new Date(user.created_at).toLocaleDateString(undefined, {
     year: 'numeric',
     month: 'long',
     day: 'numeric'
   });
+
+  const balanceFormatted = region.isIndia
+    ? `₹${user.balance.toFixed(2)}`
+    : `$${currencyService.inrToUsd(user.balance).toFixed(2)} USDT (~₹${user.balance.toFixed(2)})`;
+
+  const spentFormatted = region.isIndia
+    ? `₹${user.total_spent.toFixed(2)}`
+    : `$${currencyService.inrToUsd(user.total_spent).toFixed(2)} USDT (~₹${user.total_spent.toFixed(2)})`;
 
   const text = `
 👤 <b>User Profile & Account Information</b>
@@ -19,9 +29,9 @@ export async function handleProfile(ctx: Context) {
 🆔 <b>User ID:</b> <code>${user.telegram_id}</code>
 👤 <b>Name:</b> ${escapeHtml(user.first_name || 'N/A')}
 🔰 <b>Account Type:</b> ${escapeHtml(user.account_type)}
-💰 <b>Current Balance:</b> ₹${user.balance.toFixed(2)}
+💰 <b>Current Balance:</b> ${balanceFormatted}
 📦 <b>Total Orders:</b> ${user.total_orders}
-💳 <b>Total Amount Spent:</b> ₹${user.total_spent.toFixed(2)}
+💳 <b>Total Amount Spent:</b> ${spentFormatted}
 📅 <b>Joined Date:</b> ${joinedDate}
 `.trim();
 

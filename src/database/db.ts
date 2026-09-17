@@ -155,20 +155,6 @@ export function initDatabase() {
     CREATE INDEX IF NOT EXISTS idx_payments_reference ON payments(reference_id);
     CREATE INDEX IF NOT EXISTS idx_payments_user ON payments(user_id);
 
-    CREATE TABLE IF NOT EXISTS verified_crypto_deposits (
-      id TEXT PRIMARY KEY,
-      order_id TEXT UNIQUE NOT NULL,
-      amount_usd REAL NOT NULL,
-      currency TEXT DEFAULT 'USDT',
-      sender_info TEXT,
-      source TEXT DEFAULT 'EMAIL',
-      is_claimed INTEGER DEFAULT 0,
-      claimed_by_payment_id TEXT,
-      received_at TEXT DEFAULT (datetime('now'))
-    );
-
-    CREATE INDEX IF NOT EXISTS idx_crypto_order ON verified_crypto_deposits(order_id);
-
     CREATE TABLE IF NOT EXISTS wallet_transactions (
       id TEXT PRIMARY KEY,
       user_id TEXT NOT NULL,
@@ -228,12 +214,12 @@ export function initDatabase() {
     { key: 'maintenance_message', value: '⚠️ Store is currently under scheduled maintenance.\n\nPlease check back soon! For urgent queries, contact support.' },
     { key: 'low_stock_threshold', value: '2' },
     { key: 'low_stock_alerts_enabled', value: 'true' },
-    { key: 'binance_api_key', value: 'R64c3ZFYaykmHXyk29VphrMpUovbdl0CxILGmssfoMYsfOKG9mL6iGpAm2XX9rsE' },
-    { key: 'binance_secret_key', value: 'Ym8WJpIZCoDb2mejQ0vfGvxHoc6QgCxiNbJRBbvThsTOOBhfJWQzlsuCeVsI9v5Z' },
-    { key: 'binance_merchant_id', value: '433230697' },
+    { key: 'binance_api_key', value: '' },
+    { key: 'binance_secret_key', value: '' },
+    { key: 'binance_merchant_id', value: '' },
     { key: 'binance_bep20_address', value: '' },
-    { key: 'binance_relay_url', value: 'https://apiproxy.site/binance-relay.php' },
-    { key: 'binance_is_configured', value: 'true' },
+    { key: 'binance_relay_url', value: '' },
+    { key: 'binance_is_configured', value: 'false' },
     { key: 'upi_merchant_vpa', value: 'iamsandeepjha@fam' },
     { key: 'upi_merchant_name', value: 'SANDEEP KUMAR JHA' },
     { key: 'upi_webhook_secret', value: 'upi_secret_key_123' },
@@ -253,25 +239,26 @@ export function initDatabase() {
     INSERT INTO settings (key, value, updated_at) 
     VALUES (?, ?, datetime('now'))
     ON CONFLICT(key) DO UPDATE SET value = excluded.value
-    WHERE settings.value = '' OR settings.value = 'http://localhost:3000/api/payments/webhook/binance' OR settings.value = 'false'
   `);
 
   for (const s of defaultSettings) {
     insertSetting.run(s.key, s.value);
   }
 
-  // Clean up all fake/demo orders, sales, users, wallets, and products
+  // Drop old Binance crypto deposits table & clean old Binance payments
   try {
     db.exec(`
-      DELETE FROM orders;
-      DELETE FROM payments;
-      DELETE FROM wallet_transactions;
-      DELETE FROM users;
-      DELETE FROM licenses WHERE service_id IN ('srv_apple', 'srv_bgmi') OR license_key LIKE 'APPLE%' OR license_key LIKE 'BGMI%' OR license_key LIKE 'TEST%';
-      DELETE FROM api_mappings WHERE service_id IN ('srv_apple', 'srv_bgmi');
-      DELETE FROM validities WHERE service_id IN ('srv_apple', 'srv_bgmi');
-      DELETE FROM services WHERE id IN ('srv_apple', 'srv_bgmi');
+      DROP TABLE IF EXISTS verified_crypto_deposits;
+      DELETE FROM payments WHERE payment_method = 'BINANCE_PAY';
     `);
+  } catch {}
+
+  // Ensure language_code column exists on users table
+  try {
+    db.exec(`ALTER TABLE users ADD COLUMN language_code TEXT;`);
+  } catch {}
+  try {
+    db.exec(`ALTER TABLE users ADD COLUMN country_code TEXT;`);
   } catch {}
 }
 

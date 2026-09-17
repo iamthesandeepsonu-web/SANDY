@@ -3,6 +3,7 @@ import { config } from '../config/index.js';
 import { settingsRepo } from '../database/repositories/settingsRepo.js';
 import { userRepo } from '../database/repositories/userRepo.js';
 import { serviceRepo } from '../database/repositories/serviceRepo.js';
+import { currencyService } from '../services/currencyService.js';
 import { handleStart } from './handlers/startHandler.js';
 import {
   handleShopMenu,
@@ -236,6 +237,16 @@ export function createTelegramBot(): Bot | null {
     }
 
     // Wallet & Payments Flow
+    if (data.startsWith('wallet_preset_inr_')) {
+      const amount = parseFloat(data.replace('wallet_preset_inr_', ''));
+      const usd = currencyService.inrToUsd(amount);
+      return handleSelectPaymentMethod(ctx, amount, usd);
+    }
+    if (data.startsWith('wallet_preset_usd_')) {
+      const usd = parseFloat(data.replace('wallet_preset_usd_', ''));
+      const inr = currencyService.usdToInr(usd);
+      return handleSelectPaymentMethod(ctx, inr, usd);
+    }
     if (data.startsWith('wallet_preset_')) {
       const amount = parseInt(data.replace('wallet_preset_', ''), 10);
       return handleSelectPaymentMethod(ctx, amount);

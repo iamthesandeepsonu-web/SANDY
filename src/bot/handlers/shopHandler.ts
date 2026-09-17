@@ -10,6 +10,7 @@ import { fulfillmentService } from '../../services/fulfillmentService.js';
 import { binancePayService } from '../../services/binancePayService.js';
 import { upiService } from '../../services/upiService.js';
 import { paymentRepo } from '../../database/repositories/paymentRepo.js';
+import { currencyService } from '../../services/currencyService.js';
 import { keyboards } from '../keyboards.js';
 import crypto from 'crypto';
 
@@ -75,7 +76,10 @@ export async function handleServiceSelect(ctx: Context, serviceId: string) {
   }
 
   const validities = validityRepo.getByServiceIdWithStock(serviceId, true); // Only active validities
-  const usdRate = settingsRepo.getUsdRate();
+  const usdRate = currencyService.getUsdRate();
+  const from = ctx.from;
+  const user = from ? userRepo.getByTelegramId(from.id) : null;
+  const region = currencyService.detectUserRegion(from, user);
 
   if (validities.length === 0) {
     const text = `🎮 <b>${escapeHtml(service.name)}</b>\n\n${service.description ? escapeHtml(service.description) + '\n\n' : ''}No validity plans are active for this product at the moment.`;
@@ -90,8 +94,8 @@ ${service.description ? `<i>${escapeHtml(service.description)}</i>\n` : ''}
 Select Validity:
 `.trim();
 
-  // Shows only: Validity | INR Price | USD Price
-  const kb = keyboards.validitiesList(serviceId, validities, usdRate);
+  // Shows Validity with User Default Currency prioritized
+  const kb = keyboards.validitiesList(serviceId, validities, region.isIndia, usdRate);
   await ctx.editMessageText(text, { parse_mode: 'HTML', reply_markup: kb });
   await ctx.answerCallbackQuery();
 }
@@ -113,8 +117,6 @@ export async function handleValiditySelect(ctx: Context, serviceId: string, vali
     await ctx.answerCallbackQuery({ text: 'Invalid product selected.', show_alert: true });
     return handleShopMenu(ctx);
   }
-
-  const priceUsd = settingsRepo.calculateUsd(validity.price);
 
   // Inform user that live verification is happening
   await ctx.answerCallbackQuery({ text: '🔍 Checking live provider stock...' });
@@ -211,17 +213,28 @@ Sorry, this product is currently <b>Out of Stock</b> in our local inventory.
   }
 
   // STOCK CONFIRMED AVAILABLE -> SHOW PAYMENT OPTIONS
-  const balanceInfo = user.balance >= validity.price
-    ? `✅ <b>INR Balance:</b> ₹${user.balance.toFixed(2)} (Sufficient)`
-    : `⚠️ <b>INR Balance:</b> ₹${user.balance.toFixed(2)} (Need ₹${(validity.price - user.balance).toFixed(2)} more)`;
+  const region = currencyService.detectUserRegion(from, user);
+  const priceUsd = currencyService.inrToUsd(validity.price);
+  const usdRate = currencyService.getUsdRate();
+
+  const balanceInfo = region.isIndia
+    ? (user.balance >= validity.price
+        ? `✅ <b>Wallet Balance:</b> ₹${user.balance.toFixed(2)} (Sufficient)`
+        : `⚠️ <b>Wallet Balance:</b> ₹${user.balance.toFixed(2)} (Need ₹${(validity.price - user.balance).toFixed(2)} more)`)
+    : (user.balance >= validity.price
+        ? `✅ <b>Wallet Balance:</b> $${currencyService.inrToUsd(user.balance).toFixed(2)} USDT (Sufficient)`
+        : `⚠️ <b>Wallet Balance:</b> $${currencyService.inrToUsd(user.balance).toFixed(2)} USDT (Need $${currencyService.inrToUsd(validity.price - user.balance).toFixed(2)} more)`);
+
+  const priceHeader = region.isIndia
+    ? `💵 <b>Price (INR):</b> ₹${validity.price.toFixed(2)} INR (≈ $${priceUsd.toFixed(2)} USD)`
+    : `💵 <b>Price (USDT):</b> $${priceUsd.toFixed(2)} USDT (≈ ₹${validity.price.toFixed(2)} INR)`;
 
   const text = `
 ✅ <b>LIVE STOCK CONFIRMED AVAILABLE</b>
 
 🎮 <b>Product:</b> ${escapeHtml(service.name)}
 ⏳ <b>Plan:</b> ${escapeHtml(validity.name)}
-💵 <b>Price (INR):</b> ₹${validity.price.toFixed(2)}
-💵 <b>Price (USD):</b> $${priceUsd.toFixed(2)}
+${priceHeader}
 
 👤 <b>Your Account:</b>
 ${balanceInfo}
@@ -229,7 +242,7 @@ ${balanceInfo}
 👇 <b>SELECT PAYMENT METHOD:</b>
 `.trim();
 
-  const kb = keyboards.shopPaymentOptions(serviceId, validityId, validity.price, priceUsd, user.balance);
+  const kb = keyboards.shopPaymentOptions(serviceId, validityId, validity.price, priceUsd, user.balance, region.isIndia, usdRate);
   await ctx.editMessageText(text, { parse_mode: 'HTML', reply_markup: kb });
 }
 

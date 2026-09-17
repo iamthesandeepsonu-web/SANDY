@@ -11,6 +11,8 @@ export interface User {
   total_spent: number;
   total_orders: number;
   is_banned: number;
+  language_code?: string | null;
+  country_code?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -24,22 +26,22 @@ export const userRepo = {
     return queryOne<User>('SELECT * FROM users WHERE id = ?', id);
   },
 
-  upsertFromTelegram(telegramId: number, username?: string, firstName?: string): User {
+  upsertFromTelegram(telegramId: number, username?: string, firstName?: string, languageCode?: string): User {
     const existing = this.getByTelegramId(telegramId);
     if (existing) {
       db.prepare(`
         UPDATE users 
-        SET username = ?, first_name = ?, updated_at = datetime('now')
+        SET username = ?, first_name = ?, language_code = COALESCE(?, language_code), updated_at = datetime('now')
         WHERE telegram_id = ?
-      `).run(username || existing.username, firstName || existing.first_name, telegramId);
+      `).run(username || existing.username, firstName || existing.first_name, languageCode || null, telegramId);
       return this.getByTelegramId(telegramId)!;
     }
 
     const id = 'usr_' + crypto.randomBytes(8).toString('hex');
     db.prepare(`
-      INSERT INTO users (id, telegram_id, username, first_name, account_type, balance, total_spent, total_orders, is_banned)
-      VALUES (?, ?, ?, ?, 'Regular', 0.0, 0.0, 0, 0)
-    `).run(id, telegramId, username || null, firstName || null);
+      INSERT INTO users (id, telegram_id, username, first_name, account_type, balance, total_spent, total_orders, is_banned, language_code)
+      VALUES (?, ?, ?, ?, 'Regular', 0.0, 0.0, 0, 0, ?)
+    `).run(id, telegramId, username || null, firstName || null, languageCode || null);
 
     return this.getById(id)!;
   },

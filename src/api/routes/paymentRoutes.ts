@@ -142,27 +142,3 @@ paymentRoutes.post('/webhook/upi', async (req, res) => {
 
   return res.json({ success: true, message: 'Ignored webhook status' });
 });
-
-// Webhook for Binance Pay
-paymentRoutes.post('/webhook/binance', async (req, res) => {
-  const { merchantTradeNo, bizStatus } = req.body;
-
-  if (!merchantTradeNo) {
-    return res.status(400).json({ returnCode: 'FAIL', returnMessage: 'Missing merchantTradeNo' });
-  }
-
-  const payment = paymentRepo.getByReferenceId(merchantTradeNo);
-  if (!payment) {
-    return res.status(404).json({ returnCode: 'FAIL', returnMessage: 'Order not found' });
-  }
-
-  if (bizStatus === 'PAY_SUCCESS') {
-    const result = paymentRepo.completePayment(payment.id, req.body.transactionId || 'BINANCE_TX_' + Date.now());
-    if (!result.alreadyProcessed) {
-      await processPaymentCompletionAndNotify(payment.id);
-    }
-    return res.json({ returnCode: 'SUCCESS', returnMessage: null });
-  }
-
-  return res.json({ returnCode: 'SUCCESS', returnMessage: null });
-});

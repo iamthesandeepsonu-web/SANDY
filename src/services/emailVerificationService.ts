@@ -2,7 +2,6 @@ import { ImapFlow } from 'imapflow';
 import { simpleParser } from 'mailparser';
 import { settingsRepo } from '../database/repositories/settingsRepo.js';
 import { paymentRepo, Payment } from '../database/repositories/paymentRepo.js';
-import { cryptoDepositRepo } from '../database/repositories/cryptoDepositRepo.js';
 import { fulfillmentService } from './fulfillmentService.js';
 import { activeBot } from '../bot/bot.js';
 import { keyboards } from '../bot/keyboards.js';
@@ -247,24 +246,7 @@ class EmailVerificationService {
           const textContent = (parsed.text || '') + ' ' + (parsed.html ? parsed.html.replace(/<[^>]+>/g, ' ') : '');
           const fromAddress = parsed.from?.text || '';
 
-          // 1. Check if Binance email notification
-          const isBinance = this.isBinanceNotification(subject, textContent, fromAddress);
-          if (isBinance) {
-            const bDetails = this.extractBinancePaymentDetails(subject, textContent);
-            if (bDetails.orderId && bDetails.amountUsd > 0) {
-              cryptoDepositRepo.recordDeposit({
-                orderId: bDetails.orderId,
-                amountUsd: bDetails.amountUsd,
-                currency: bDetails.currency || 'USDT',
-                senderInfo: bDetails.sender || undefined,
-                source: 'BINANCE_EMAIL'
-              });
-              console.log(`🟡 [BINANCE EMAIL WORKER] Recorded Verified Binance Deposit: Order ID: ${bDetails.orderId}, Amount: $${bDetails.amountUsd} USDT`);
-              this.processedMessageIds.add(messageId);
-            }
-          }
-
-          // 2. Check if email looks like a UPI payment confirmation
+          // Check if email looks like a UPI payment confirmation
           const isPaymentEmail = this.isPaymentNotification(subject, textContent, fromAddress);
 
           if (isPaymentEmail) {
@@ -406,45 +388,7 @@ class EmailVerificationService {
     return { amount, utr, refId };
   }
 
-  private isBinanceNotification(subject: string, text: string, from: string): boolean {
-    const combined = (subject + ' ' + text + ' ' + from).toLowerCase();
-    const isBinanceSender = combined.includes('binance') || combined.includes('directmail.binance.com') || combined.includes('binancepay');
-    const isPayAlert = combined.includes('received') || combined.includes('payment') || combined.includes('pay id') || combined.includes('deposit') || combined.includes('usdt');
-    return isBinanceSender && isPayAlert;
-  }
 
-  private extractBinancePaymentDetails(subject: string, text: string): { orderId: string | null; amountUsd: number; currency: string; sender: string | null } {
-    const combined = subject + '\n' + text;
-
-    // Extract USDT/Crypto Amount (e.g. 0.11 USDT, 15.50 USDT, 0.11000000 USDT)
-    let amountUsd = 0;
-    const amountMatch = combined.match(/([0-9]+(?:\.[0-9]+)?)\s*(?:USDT|BUSD|USDC|FDUSD)/i)
-      || combined.match(/(?:received|amount\s*(?:of)?|total)?\s*([0-9]+(?:\.[0-9]+)?)\s*USDT/i);
-
-    if (amountMatch && amountMatch[1]) {
-      const val = parseFloat(amountMatch[1]);
-      if (!isNaN(val) && val > 0) {
-        amountUsd = val;
-      }
-    }
-
-    // Extract Binance Order ID / TxID / Pay ID
-    let orderId: string | null = null;
-    const orderIdMatch = combined.match(/(?:Order\s*ID|Pay\s*ID|TxID|Transaction\s*ID|Payment\s*ID|Order\s*No)[\s:#]*([0-9]{8,25}|[A-Za-z0-9]{8,25})/i)
-      || combined.match(/([0-9]{12,22})/);
-
-    if (orderIdMatch && orderIdMatch[1]) {
-      orderId = orderIdMatch[1].trim();
-    }
-
-    let sender: string | null = null;
-    const senderMatch = combined.match(/(?:from|by)\s+([A-Za-z0-9_.*@]+)/i);
-    if (senderMatch && senderMatch[1]) {
-      sender = senderMatch[1].trim();
-    }
-
-    return { orderId, amountUsd, currency: 'USDT', sender };
-  }
 
   private findMatchingPayment(
     pendingPayments: Payment[],
