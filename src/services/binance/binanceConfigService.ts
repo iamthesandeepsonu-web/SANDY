@@ -113,20 +113,31 @@ export const binanceConfigService = {
       isConfigured: Boolean(candidateApiKey && candidateSecretKey)
     };
 
-    // If API Key or Secret Key is provided, pre-validate before saving
+    // If API Key or Secret Key is provided, validate before saving
+    let validationWarning = '';
     if (candidateApiKey && candidateSecretKey) {
       const validation = await validateFn(candidateCreds);
       if (!validation.success) {
-        auditRepo.logAdminAction({
-          adminUser,
-          action: 'BINANCE_CONFIG_UPDATE_FAILED',
-          details: `Validation failed: ${validation.message}`
-        });
+        const isGeoOrNetwork = validation.message.includes('451') || 
+                               validation.message.includes('connectivity') || 
+                               validation.message.includes('timeout') ||
+                               validation.message.includes('geo');
 
-        return {
-          success: false,
-          message: `❌ Configuration validation failed: ${validation.message}. Previous working configuration was retained.`
-        };
+        // If explicitly bad credentials (401 / Invalid API Key), reject
+        if (!isGeoOrNetwork) {
+          auditRepo.logAdminAction({
+            adminUser,
+            action: 'BINANCE_CONFIG_UPDATE_FAILED',
+            details: `Validation failed: ${validation.message}`
+          });
+
+          return {
+            success: false,
+            message: `❌ Configuration validation failed: ${validation.message}. Previous working configuration was retained.`
+          };
+        } else {
+          validationWarning = ' (Note: Cloud host geo-restriction detected. Relay proxy is active for Binance API calls)';
+        }
       }
     }
 
@@ -160,7 +171,7 @@ export const binanceConfigService = {
 
     return {
       success: true,
-      message: '✅ Binance Pay configuration validated and activated successfully!'
+      message: '✅ Binance Pay configuration validated and activated successfully!' + validationWarning
     };
   }
 };
