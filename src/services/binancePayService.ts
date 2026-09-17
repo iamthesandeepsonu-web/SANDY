@@ -1,7 +1,10 @@
 import crypto from 'crypto';
 import axios from 'axios';
 import QRCode from 'qrcode';
+import { InlineKeyboard } from 'grammy';
 import { db } from '../database/db.js';
+import { config } from '../config/index.js';
+import { activeBot } from '../bot/bot.js';
 import { settingsRepo } from '../database/repositories/settingsRepo.js';
 import { paymentRepo } from '../database/repositories/paymentRepo.js';
 import { userRepo } from '../database/repositories/userRepo.js';
@@ -154,7 +157,13 @@ export const binancePayService = {
     }
   },
 
-  async queryOrder(merchantTradeNo: string): Promise<{ success: boolean; status?: string; transactionId?: string }> {
+  async queryOrder(merchantTradeNo: string, prepayId?: string): Promise<{
+    success: boolean;
+    status?: string;
+    orderAmount?: number;
+    currency?: string;
+    transactionId?: string;
+  }> {
     const cfg = this.getConfig();
     if (!cfg.apiKey || !cfg.secretKey) {
       return { success: false };
@@ -163,7 +172,9 @@ export const binancePayService = {
     try {
       const timestamp = Date.now();
       const nonce = crypto.randomBytes(16).toString('hex');
-      const requestBody = { merchantTradeNo };
+      const requestBody: any = { merchantTradeNo };
+      if (prepayId) requestBody.prepayId = prepayId;
+
       const payloadStr = JSON.stringify(requestBody);
       const signature = this.generateSignature(payloadStr, cfg.secretKey, timestamp, nonce);
 
@@ -180,9 +191,13 @@ export const binancePayService = {
 
       if (response.data && response.data.status === 'SUCCESS' && response.data.data) {
         const orderStatus = response.data.data.status;
+        const amount = parseFloat(response.data.data.orderAmount || response.data.data.totalFee || '0');
+        const currency = response.data.data.currency || 'USDT';
         return {
           success: true,
           status: orderStatus,
+          orderAmount: amount,
+          currency,
           transactionId: response.data.data.transactionId
         };
       }
@@ -315,6 +330,7 @@ export const binancePayService = {
   async verifyAndClaimBinanceOrderId(paymentId: string, rawOrderId: string, _optionalUserId?: string): Promise<{
     success: boolean;
     message: string;
+    isPendingReview?: boolean;
     isOrderFulfilled?: boolean;
     order?: any;
     licenseKey?: string;
@@ -347,58 +363,104 @@ export const binancePayService = {
       };
     }
 
-    // Complete the payment record in database (credits payment.amount to user's wallet)
-    const completeRes = paymentRepo.completePayment(payment.id, cleanOrderId);
-    const updatedPayment = completeRes.payment;
-    const targetUserId = payment.user_id;
-    const user = userRepo.getById(targetUserId);
-
     let meta: any = {};
-    if (updatedPayment.metadata) {
+    if (payment.metadata) {
       try {
-        meta = typeof updatedPayment.metadata === 'string' ? JSON.parse(updatedPayment.metadata) : updatedPayment.metadata;
+        meta = typeof payment.metadata === 'string' ? JSON.parse(payment.metadata) : payment.metadata;
       } catch {}
     }
 
-    // If this was a direct product purchase, execute fulfillment immediately using database user ID
-    if (meta && meta.serviceId && meta.validityId) {
-      const fulfillRes = await fulfillmentService.processPurchase(targetUserId, meta.serviceId, meta.validityId);
-      if (fulfillRes.success && fulfillRes.order) {
-        meta.orderId = fulfillRes.order.id;
-        meta.licenseKey = fulfillRes.licenseKey || fulfillRes.order.license_key;
-        meta.binanceTxnId = cleanOrderId;
-        db.prepare('UPDATE payments SET metadata = ? WHERE id = ?').run(JSON.stringify(meta), updatedPayment.id);
+    const expectedUsd = meta.priceUsd || settingsRepo.calculateUsd(payment.amount);
+    const targetUserId = payment.user_id;
+    const user = userRepo.getById(targetUserId);
 
+    // 1. Try Live Binance OpenAPI Check
+    const liveCheck = await this.queryOrder(payment.reference_id, meta.prepayId);
+
+    if (liveCheck.success && (liveCheck.status === 'PAID' || liveCheck.status === 'SUCCESS')) {
+      const actualPaidUsd = liveCheck.orderAmount || expectedUsd;
+
+      // Strict Underpayment Check
+      if (actualPaidUsd < expectedUsd - 0.005) {
         return {
-          success: true,
-          message: '✅ Binance Pay Verified & Product Delivered!',
-          isOrderFulfilled: true,
-          order: fulfillRes.order,
-          licenseKey: fulfillRes.licenseKey || fulfillRes.order.license_key,
-          amountInr: updatedPayment.amount,
-          amountUsd: meta.priceUsd || settingsRepo.calculateUsd(updatedPayment.amount)
+          success: false,
+          message: `❌ <b>Underpayment Detected!</b>\n\n💵 <b>Required Amount:</b> $${expectedUsd.toFixed(2)} USDT\n💵 <b>Amount Received on Binance:</b> $${actualPaidUsd.toFixed(2)} USDT\n\n⚠️ You paid less than the required amount. Order cannot be completed until the exact amount ($${expectedUsd.toFixed(2)} USDT) is transferred.`
         };
-      } else {
-        // Product out of stock or fulfillment error: funds remain safely in wallet
-        return {
-          success: true,
-          message: `✅ Binance Pay Verified! ₹${updatedPayment.amount.toFixed(2)} credited to your wallet balance. (${fulfillRes.errorMessage || 'Product out of stock'})`,
-          isOrderFulfilled: false,
-          walletBalance: user ? user.balance : updatedPayment.amount,
-          amountInr: updatedPayment.amount,
-          amountUsd: meta.priceUsd || settingsRepo.calculateUsd(updatedPayment.amount)
-        };
+      }
+
+      // Live amount verified -> Auto Complete
+      const completeRes = paymentRepo.completePayment(payment.id, cleanOrderId);
+      const updatedPayment = completeRes.payment;
+
+      if (meta && meta.serviceId && meta.validityId) {
+        const fulfillRes = await fulfillmentService.processPurchase(targetUserId, meta.serviceId, meta.validityId);
+        if (fulfillRes.success && fulfillRes.order) {
+          meta.orderId = fulfillRes.order.id;
+          meta.licenseKey = fulfillRes.licenseKey || fulfillRes.order.license_key;
+          meta.binanceTxnId = cleanOrderId;
+          db.prepare('UPDATE payments SET metadata = ? WHERE id = ?').run(JSON.stringify(meta), updatedPayment.id);
+
+          return {
+            success: true,
+            message: '✅ Binance Pay Verified & Product Delivered!',
+            isOrderFulfilled: true,
+            order: fulfillRes.order,
+            licenseKey: fulfillRes.licenseKey || fulfillRes.order.license_key,
+            amountInr: updatedPayment.amount,
+            amountUsd: expectedUsd
+          };
+        }
+      }
+
+      return {
+        success: true,
+        message: `✅ Binance Pay Verified! ₹${updatedPayment.amount.toFixed(2)} credited to your wallet balance.`,
+        isOrderFulfilled: false,
+        walletBalance: user ? user.balance : updatedPayment.amount,
+        amountInr: updatedPayment.amount,
+        amountUsd: expectedUsd
+      };
+    }
+
+    // 2. Direct manual transfer to Pay ID 433230697 (or US geoblocked):
+    // Save Txn ID in metadata and trigger Admin Real-Time Approval Alert on Telegram
+    meta.binanceTxnId = cleanOrderId;
+    db.prepare('UPDATE payments SET metadata = ? WHERE id = ?').run(JSON.stringify(meta), payment.id);
+
+    if (activeBot && config.admin.telegramIds.length > 0) {
+      const adminKb = new InlineKeyboard()
+        .text(`✅ Approve ($${expectedUsd.toFixed(2)})`, `admin_approve_pay_${payment.id}`)
+        .text('❌ Reject', `admin_reject_pay_${payment.id}`);
+
+      const alertText = `
+🚨 <b>BINANCE PAYMENT REVIEW REQUEST</b>
+
+👤 <b>User:</b> @${user?.username || 'NoUsername'} (ID: <code>${payment.telegram_id}</code>)
+🎮 <b>Product:</b> ${meta.productName || 'Wallet Top-Up'}
+${meta.validityName ? `⏳ <b>Plan:</b> ${meta.validityName}\n` : ''}💵 <b>Expected Amount:</b> <b>$${expectedUsd.toFixed(2)} USDT</b> (₹${payment.amount.toFixed(2)})
+🔢 <b>Submitted Order/Txn ID:</b> <code>${cleanOrderId}</code>
+
+👉 <i>Please open Binance App ➔ Pay ➔ Payment History, verify if exact <b>$${expectedUsd.toFixed(2)} USDT</b> was received for this Order ID, and tap Approve or Reject:</i>
+`.trim();
+
+      for (const adminId of config.admin.telegramIds) {
+        try {
+          await activeBot.api.sendMessage(adminId, alertText, {
+            parse_mode: 'HTML',
+            reply_markup: adminKb
+          });
+        } catch (e: any) {
+          console.error(`Failed to send Binance payment alert to admin ${adminId}:`, e.message);
+        }
       }
     }
 
-    // Standard wallet balance top-up
     return {
       success: true,
-      message: `✅ Binance Pay Verified! ₹${updatedPayment.amount.toFixed(2)} credited to your wallet balance.`,
-      isOrderFulfilled: false,
-      walletBalance: user ? user.balance : updatedPayment.amount,
-      amountInr: updatedPayment.amount,
-      amountUsd: meta.priceUsd || settingsRepo.calculateUsd(updatedPayment.amount)
+      isPendingReview: true,
+      message: `⏳ <b>Binance Payment Submitted for Verification</b>\n\n🆔 <b>Order ID / Txn ID:</b> <code>${cleanOrderId}</code>\n💵 <b>Required Amount:</b> <b>$${expectedUsd.toFixed(2)} USDT</b>\n\n<i>Your payment receipt is being verified against our Binance Pay records to confirm the exact amount ($${expectedUsd.toFixed(2)} USDT). Your key will be delivered as soon as verification completes!</i>`,
+      amountInr: payment.amount,
+      amountUsd: expectedUsd
     };
   }
 };

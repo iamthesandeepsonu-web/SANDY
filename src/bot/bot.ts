@@ -28,6 +28,8 @@ import { handleSupport } from './handlers/supportHandler.js';
 import {
   handleAdminCommand,
   handleAdminToggleMaintenance,
+  handleAdminApprovePayment,
+  handleAdminRejectPayment,
   isUserAdmin
 } from './handlers/adminBotHandler.js';
 
@@ -256,6 +258,14 @@ export function createTelegramBot(): Bot | null {
     if (data.startsWith('binance_enter_order_')) {
       const paymentId = data.replace('binance_enter_order_', '');
       return promptBinanceOrderId(ctx, paymentId);
+    }
+    if (data.startsWith('admin_approve_pay_')) {
+      const paymentId = data.replace('admin_approve_pay_', '');
+      return handleAdminApprovePayment(ctx, paymentId);
+    }
+    if (data.startsWith('admin_reject_pay_')) {
+      const paymentId = data.replace('admin_reject_pay_', '');
+      return handleAdminRejectPayment(ctx, paymentId);
     }
     if (data.startsWith('pay_check_')) {
       const paymentId = data.replace('pay_check_', '');

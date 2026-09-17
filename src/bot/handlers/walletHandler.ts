@@ -121,6 +121,14 @@ export async function handleCustomAmountText(ctx: Context, text: string) {
     // Success: remove user from waiting map
     userWaitingForBinanceOrderId.delete(from.id);
 
+    if (verification.isPendingReview) {
+      await ctx.reply(verification.message, {
+        parse_mode: 'HTML',
+        reply_markup: keyboards.mainMenu()
+      });
+      return true;
+    }
+
     if (verification.isOrderFulfilled && verification.order) {
       const order = verification.order;
       const licenseKey = verification.licenseKey || order.license_key;
