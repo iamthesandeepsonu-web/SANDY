@@ -178,10 +178,20 @@ export const binancePayService = {
       );
     });
 
-    // 2. Exact Payment Verification Check
+    // 2. Payment Verification Check
     if (matchedSapiTxn) {
-      const isExactAmount = Math.abs(matchedSapiTxn.amount - expectedUsd) <= 0.001;
-      if (!isExactAmount) {
+      const isDirectShopOrder = Boolean(meta && meta.serviceId && meta.validityId);
+
+      // For Direct Product Purchase: Ensure customer transferred required USD price (with 0.015 rounding margin)
+      if (isDirectShopOrder && matchedSapiTxn.amount < (expectedUsd - 0.015)) {
+        return {
+          success: false,
+          message: `❌ <b>Binance Payment Not Found</b>\n\nOrder ID <code>${cleanOrderId}</code> was not found on Binance.\n\n💡 <i>If you just paid on Binance, please wait 15–30 seconds for confirmation and click <b>Enter Binance Order ID</b> again.</i>`
+        };
+      }
+
+      // For Wallet Top-Up: Ensure valid positive amount transferred
+      if (matchedSapiTxn.amount <= 0) {
         return {
           success: false,
           message: `❌ <b>Binance Payment Not Found</b>\n\nOrder ID <code>${cleanOrderId}</code> was not found on Binance.\n\n💡 <i>If you just paid on Binance, please wait 15–30 seconds for confirmation and click <b>Enter Binance Order ID</b> again.</i>`
@@ -209,12 +219,16 @@ export const binancePayService = {
       });
       cryptoDepositRepo.claimDeposit(canonicalOrderId, payment.id);
 
+      // Compute actual INR value from transferred USDT
+      const usdRate = settingsRepo.getUsdRate();
+      const creditedInr = isDirectShopOrder ? payment.amount : parseFloat((matchedSapiTxn.amount * usdRate).toFixed(2));
+
       // Complete payment
       const completeRes = paymentRepo.completePayment(payment.id, canonicalOrderId);
       const updatedPayment = completeRes.payment;
 
       // Direct Product Purchase: Deliver license key immediately
-      if (meta && meta.serviceId && meta.validityId) {
+      if (isDirectShopOrder) {
         const fulfillRes = await fulfillmentService.processPurchase(targetUserId, meta.serviceId, meta.validityId);
         if (fulfillRes.success && fulfillRes.order) {
           meta.orderId = fulfillRes.order.id;
@@ -234,12 +248,14 @@ export const binancePayService = {
         }
       }
 
-      // Wallet Top-Up: Credit balance
+      // Wallet Top-Up: Return updated balance
+      const updatedUser = userRepo.getById(targetUserId);
+
       return {
         success: true,
         message: `🎉 <b>Payment Auto-Verified!</b> ₹${updatedPayment.amount.toFixed(2)} ($${matchedSapiTxn.amount.toFixed(2)} USDT) has been credited to your wallet balance.`,
         isOrderFulfilled: false,
-        walletBalance: user ? user.balance : updatedPayment.amount,
+        walletBalance: updatedUser ? updatedUser.balance : updatedPayment.amount,
         amountInr: updatedPayment.amount,
         amountUsd: matchedSapiTxn.amount
       };
