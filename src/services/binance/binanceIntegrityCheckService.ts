@@ -176,7 +176,7 @@ export const binanceIntegrityCheckService = {
       success: overallSuccess,
       timestamp: new Date().toISOString(),
       accountStatus: overallSuccess ? 'Active & Verified' : 'Authentication / Connection Failed',
-      merchantId: creds.merchantId || '433230697',
+      merchantId: creds.merchantId || 'Not Configured',
       latencyMs,
       checks,
       summaryMessage

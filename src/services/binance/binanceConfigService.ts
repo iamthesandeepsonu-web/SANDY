@@ -6,8 +6,11 @@ export interface BinanceCredentials {
   secretKey: string;
   merchantId: string;
   bep20Address: string;
+  webhookUrl: string;
   webhookSecret: string;
   relayUrl: string;
+  apiBaseUrl: string;
+  configVersion: number;
   isConfigured: boolean;
 }
 
@@ -16,19 +19,25 @@ export interface MaskedBinanceConfig {
   secretKeyConfigured: boolean;
   merchantId: string;
   bep20Address: string;
+  webhookUrl: string;
   webhookSecretMasked: string;
   relayUrl: string;
+  apiBaseUrl: string;
+  configVersion: number;
   isConfigured: boolean;
 }
 
 export const binanceConfigService = {
   getConfig(): BinanceCredentials {
-    const apiKey = (settingsRepo.get('binance_api_key', '') || process.env.BINANCE_API_KEY || '').trim();
-    const secretKey = (settingsRepo.get('binance_secret_key', '') || process.env.BINANCE_SECRET_KEY || '').trim();
-    const merchantId = (settingsRepo.get('binance_merchant_id', '') || process.env.BINANCE_PAY_ID || '').trim();
-    const bep20Address = (settingsRepo.get('binance_bep20_address', '') || process.env.BINANCE_BEP20_ADDRESS || '').trim();
-    const webhookSecret = (settingsRepo.get('binance_webhook_secret', '') || process.env.BINANCE_WEBHOOK_SECRET || '').trim();
+    const apiKey = (settingsRepo.get('binance_api_key', '') || '').trim();
+    const secretKey = (settingsRepo.get('binance_secret_key', '') || '').trim();
+    const merchantId = (settingsRepo.get('binance_merchant_id', '') || '').trim();
+    const bep20Address = (settingsRepo.get('binance_bep20_address', '') || '').trim();
+    const webhookUrl = (settingsRepo.get('binance_webhook_url', '') || '').trim();
+    const webhookSecret = (settingsRepo.get('binance_webhook_secret', '') || '').trim();
     const relayUrl = (settingsRepo.get('binance_relay_url', '') || '').trim();
+    const apiBaseUrl = (settingsRepo.get('binance_api_base_url', '') || 'https://api.binance.com').trim();
+    const configVersion = settingsRepo.getNumber('binance_config_version', 1);
     const isConfigured = settingsRepo.getBoolean('binance_is_configured', false);
 
     return {
@@ -36,8 +45,11 @@ export const binanceConfigService = {
       secretKey,
       merchantId,
       bep20Address,
+      webhookUrl,
       webhookSecret,
       relayUrl,
+      apiBaseUrl,
+      configVersion,
       isConfigured: Boolean(isConfigured && apiKey && secretKey)
     };
   },
@@ -56,8 +68,11 @@ export const binanceConfigService = {
       secretKeyConfigured: Boolean(cfg.secretKey),
       merchantId: cfg.merchantId,
       bep20Address: cfg.bep20Address,
+      webhookUrl: cfg.webhookUrl,
       webhookSecretMasked,
       relayUrl: cfg.relayUrl,
+      apiBaseUrl: cfg.apiBaseUrl,
+      configVersion: cfg.configVersion,
       isConfigured: cfg.isConfigured
     };
   },
@@ -71,8 +86,10 @@ export const binanceConfigService = {
       secretKey?: string;
       merchantId?: string;
       bep20Address?: string;
+      webhookUrl?: string;
       webhookSecret?: string;
       relayUrl?: string;
+      apiBaseUrl?: string;
     },
     validateFn: (creds: BinanceCredentials) => Promise<{ success: boolean; message: string }>,
     adminUser = 'admin'
@@ -95,6 +112,10 @@ export const binanceConfigService = {
       ? newConfig.bep20Address.trim()
       : current.bep20Address;
 
+    const candidateWebhookUrl = newConfig.webhookUrl !== undefined
+      ? newConfig.webhookUrl.trim()
+      : current.webhookUrl;
+
     const candidateWebhookSecret = newConfig.webhookSecret !== undefined && !newConfig.webhookSecret.includes('...')
       ? newConfig.webhookSecret.trim()
       : current.webhookSecret;
@@ -103,13 +124,22 @@ export const binanceConfigService = {
       ? newConfig.relayUrl.trim()
       : current.relayUrl;
 
+    const candidateApiBaseUrl = newConfig.apiBaseUrl !== undefined && newConfig.apiBaseUrl.trim()
+      ? newConfig.apiBaseUrl.trim()
+      : current.apiBaseUrl;
+
+    const nextVersion = current.configVersion + 1;
+
     const candidateCreds: BinanceCredentials = {
       apiKey: candidateApiKey,
       secretKey: candidateSecretKey,
       merchantId: candidateMerchantId,
       bep20Address: candidateBep20,
+      webhookUrl: candidateWebhookUrl,
       webhookSecret: candidateWebhookSecret,
       relayUrl: candidateRelayUrl,
+      apiBaseUrl: candidateApiBaseUrl,
+      configVersion: nextVersion,
       isConfigured: Boolean(candidateApiKey && candidateSecretKey)
     };
 
@@ -154,24 +184,31 @@ export const binanceConfigService = {
     if (newConfig.bep20Address !== undefined) {
       settingsRepo.set('binance_bep20_address', candidateBep20);
     }
+    if (newConfig.webhookUrl !== undefined) {
+      settingsRepo.set('binance_webhook_url', candidateWebhookUrl);
+    }
     if (newConfig.webhookSecret !== undefined && !newConfig.webhookSecret.includes('...')) {
       settingsRepo.set('binance_webhook_secret', candidateWebhookSecret);
     }
     if (newConfig.relayUrl !== undefined) {
       settingsRepo.set('binance_relay_url', candidateRelayUrl);
     }
+    if (newConfig.apiBaseUrl !== undefined && newConfig.apiBaseUrl.trim()) {
+      settingsRepo.set('binance_api_base_url', candidateApiBaseUrl);
+    }
 
+    settingsRepo.set('binance_config_version', String(nextVersion));
     settingsRepo.set('binance_is_configured', candidateCreds.isConfigured ? 'true' : 'false');
 
     auditRepo.logAdminAction({
       adminUser,
       action: 'BINANCE_CONFIG_UPDATED',
-      details: `Binance configuration updated and activated. Merchant ID: ${candidateMerchantId || 'N/A'}`
+      details: `Binance configuration updated to version v${nextVersion}. Merchant ID: ${candidateMerchantId || 'N/A'}`
     });
 
     return {
       success: true,
-      message: '✅ Binance Pay configuration validated and activated successfully!' + validationWarning
+      message: `✅ Binance configuration validated and activated (v${nextVersion})!` + validationWarning
     };
   }
 };

@@ -486,20 +486,30 @@
                 <div class="form-grid-2">
                   <div class="form-group">
                     <label for="binance-merchant-id">Binance Pay ID / Merchant UID</label>
-                    <input type="text" id="binance-merchant-id" class="form-control" placeholder="e.g., 433230697">
+                    <input type="text" id="binance-merchant-id" class="form-control font-mono" placeholder="e.g., 433230697">
                   </div>
                   <div class="form-group">
-                    <label for="binance-bep20">BEP-20 (USDT) Address (Fallback)</label>
+                    <label for="binance-bep20">BEP-20 (USDT) Address (Direct Crypto)</label>
                     <input type="text" id="binance-bep20" class="form-control font-mono" placeholder="0x...">
                   </div>
                 </div>
                 <div class="form-grid-2">
                   <div class="form-group">
-                    <label for="binance-relay-url">Webhook / Callback URL</label>
-                    <input type="text" id="binance-relay-url" class="form-control" placeholder="http://domain.com/api/payments/webhook/binance">
+                    <label for="binance-api-base-url">Binance API Endpoint (Base URL)</label>
+                    <input type="text" id="binance-api-base-url" class="form-control font-mono" placeholder="https://api.binance.com">
                   </div>
                   <div class="form-group">
-                    <label for="binance-webhook-secret">Webhook Secret (Optional)</label>
+                    <label for="binance-relay-url">Relay / Proxy URL (Cloud Egress Relay)</label>
+                    <input type="text" id="binance-relay-url" class="form-control font-mono" placeholder="https://apiproxy.site/binance-relay.php">
+                  </div>
+                </div>
+                <div class="form-grid-2">
+                  <div class="form-group">
+                    <label for="binance-webhook-url">Webhook URL (Instant Payment Callback)</label>
+                    <input type="text" id="binance-webhook-url" class="form-control font-mono" placeholder="https://yourdomain.com/api/payments/binance/webhook">
+                  </div>
+                  <div class="form-group">
+                    <label for="binance-webhook-secret">Webhook Signature Secret</label>
                     <input type="password" id="binance-webhook-secret" class="form-control font-mono" placeholder="Webhook Signature Secret">
                   </div>
                 </div>

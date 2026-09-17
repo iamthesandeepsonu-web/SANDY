@@ -115,8 +115,10 @@ export const binanceApiService = {
     const signature = this.generateSapiSignature(qs, creds.secretKey);
     let lastErrorMsg = '';
 
-    // 1. Try SAPI Fallback Endpoints directly
-    for (const baseUrl of SAPI_BASE_URLS) {
+    // 1. Try SAPI Fallback Endpoints directly (Prioritizing Admin-configured Base URL)
+    const candidateEndpoints = Array.from(new Set([creds.apiBaseUrl, ...SAPI_BASE_URLS].filter(Boolean)));
+
+    for (const baseUrl of candidateEndpoints) {
       try {
         const url = `${baseUrl}/sapi/v1/pay/transactions?${qs}&signature=${signature}`;
         const res = await axios.get(url, {

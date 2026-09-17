@@ -534,8 +534,12 @@ async function loadPaymentsData() {
         if (merchEl) merchEl.value = cfgRes.binance.merchantId || '';
         const bepEl = document.getElementById('binance-bep20');
         if (bepEl) bepEl.value = cfgRes.binance.bep20Address || '';
+        const baseEl = document.getElementById('binance-api-base-url');
+        if (baseEl) baseEl.value = cfgRes.binance.apiBaseUrl || 'https://api.binance.com';
         const relayEl = document.getElementById('binance-relay-url');
         if (relayEl) relayEl.value = cfgRes.binance.relayUrl || '';
+        const whUrlEl = document.getElementById('binance-webhook-url');
+        if (whUrlEl) whUrlEl.value = cfgRes.binance.webhookUrl || '';
         const whSecEl = document.getElementById('binance-webhook-secret');
         if (whSecEl) whSecEl.value = cfgRes.binance.webhookSecretMasked || '';
       }
@@ -1212,13 +1216,15 @@ function setupEventListeners() {
     const secretKey = document.getElementById('binance-secret-key').value;
     const merchantId = document.getElementById('binance-merchant-id').value;
     const bep20Address = document.getElementById('binance-bep20').value;
+    const apiBaseUrl = document.getElementById('binance-api-base-url')?.value;
     const relayUrl = document.getElementById('binance-relay-url').value;
+    const webhookUrl = document.getElementById('binance-webhook-url')?.value;
     const webhookSecret = document.getElementById('binance-webhook-secret')?.value;
 
     try {
       const res = await api('/settings/payments/binance', {
         method: 'POST',
-        body: JSON.stringify({ apiKey, secretKey, merchantId, bep20Address, relayUrl, webhookSecret })
+        body: JSON.stringify({ apiKey, secretKey, merchantId, bep20Address, apiBaseUrl, relayUrl, webhookUrl, webhookSecret })
       });
       showToast(res.message, res.success ? 'success' : 'error');
       if (res.success) {

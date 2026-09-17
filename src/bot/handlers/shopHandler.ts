@@ -511,7 +511,7 @@ export async function handlePurchaseDirectBinance(ctx: Context, serviceId: strin
 📌 <b>Payment Steps:</b>
 
 1️⃣ <b>Binance Pay ID:</b>
-<code>${binanceData.merchantId || '433230697'}</code>
+<code>${binanceData.merchantId || 'Not Configured in Admin Panel'}</code>
 
 2️⃣ ${binanceData.bep20Address ? `<b>BEP-20 USDT Address:</b>\n<code>${binanceData.bep20Address}</code>\n\n3️⃣ ` : ''}Send exactly <b>$${priceUsd.toFixed(2)} USDT</b>.
 ${binanceData.bep20Address ? '4️⃣' : '3️⃣'} Copy the <b>Binance Order ID / TxID</b> from your payment receipt.

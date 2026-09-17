@@ -32,12 +32,12 @@ paymentSettingsRoutes.get('/', requireAdmin, (req, res) => {
  * Safe Live Configuration Update with Pre-Validation
  */
 paymentSettingsRoutes.post('/binance', requireAdmin, async (req, res) => {
-  const { apiKey, secretKey, merchantId, bep20Address, webhookSecret, relayUrl } = req.body;
+  const { apiKey, secretKey, merchantId, bep20Address, webhookSecret, webhookUrl, relayUrl, apiBaseUrl } = req.body;
   const adminUser = (req as any).user?.username || 'admin';
 
   try {
     const result = await binancePayService.updateConfigSafely(
-      { apiKey, secretKey, merchantId, bep20Address, webhookSecret, relayUrl },
+      { apiKey, secretKey, merchantId, bep20Address, webhookSecret, webhookUrl, relayUrl, apiBaseUrl },
       adminUser
     );
 

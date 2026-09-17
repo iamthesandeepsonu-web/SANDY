@@ -10,8 +10,11 @@ export interface BinancePayConfig {
   secretKey: string;
   merchantId: string;
   bep20Address: string;
+  webhookUrl: string;
   webhookSecret: string;
   relayUrl: string;
+  apiBaseUrl: string;
+  configVersion: number;
   isConfigured: boolean;
 }
 
@@ -34,8 +37,10 @@ export const binancePayService = {
       secretKey?: string;
       merchantId?: string;
       bep20Address?: string;
+      webhookUrl?: string;
       webhookSecret?: string;
       relayUrl?: string;
+      apiBaseUrl?: string;
     },
     adminUser = 'admin'
   ): Promise<{ success: boolean; message: string }> {
