@@ -104,6 +104,19 @@ emailVerificationService.start().catch((err) => {
 // Start 12:01 AM IST Daily Automated Backup Scheduler
 backupService.startScheduler();
 
+// Start Automated Background Binance Reconciliation Worker (Every 30 seconds)
+setInterval(async () => {
+  try {
+    const { binancePayService } = await import('./services/binancePayService.js');
+    const cfg = binancePayService.getConfig();
+    if (cfg.isConfigured && cfg.apiKey) {
+      await binancePayService.reconcileAllPending('system_auto_reconciler');
+    }
+  } catch (err: any) {
+    // Silent fail for background cycle
+  }
+}, 30 * 1000);
+
 // Keep-Alive Self-Ping Engine (Prevents free cloud hosts like Render/Koyeb/Glitch from sleeping)
 const keepAliveUrl = process.env.RENDER_EXTERNAL_URL || process.env.PUBLIC_URL || process.env.SERVER_URL;
 if (keepAliveUrl) {
