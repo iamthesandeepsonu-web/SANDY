@@ -108,9 +108,9 @@ export const binanceApiService = {
 
     const timestamp = await this.getSynchronizedTimestamp();
     const limit = options.limit || 100;
-    let qs = `timestamp=${timestamp}&recvWindow=60000&limit=${limit}`;
-    if (options.startTimestamp) qs += `&startTimestamp=${options.startTimestamp}`;
-    if (options.endTimestamp) qs += `&endTimestamp=${options.endTimestamp}`;
+    const startTimestamp = options.startTimestamp || (timestamp - 90 * 24 * 60 * 60 * 1000);
+    const endTimestamp = options.endTimestamp || timestamp;
+    let qs = `timestamp=${timestamp}&recvWindow=60000&limit=${limit}&startTimestamp=${startTimestamp}&endTimestamp=${endTimestamp}`;
 
     const signature = this.generateSapiSignature(qs, creds.secretKey);
     let lastErrorMsg = '';
