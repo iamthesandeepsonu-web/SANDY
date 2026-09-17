@@ -185,7 +185,7 @@ class EmailVerificationService {
   /**
    * Main Check & Verification Loop
    */
-  async checkEmails() {
+  async checkEmails(force: boolean = false) {
     if (this.isChecking) return;
     this.isChecking = true;
 
@@ -195,9 +195,9 @@ class EmailVerificationService {
       return;
     }
 
-    // Fetch pending UPI payments from database within timeout window
-    const pendingPayments = this.getPendingUpiPayments(cfg.timeoutMinutes);
-    if (pendingPayments.length === 0) {
+    // Fetch pending payments (both UPI and Binance) from database within timeout window
+    const pendingPayments = this.getPendingPayments(cfg.timeoutMinutes);
+    if (!force && pendingPayments.length === 0) {
       this.isChecking = false;
       return;
     }
@@ -222,8 +222,8 @@ class EmailVerificationService {
       const lock = await client.getMailboxLock('INBOX');
 
       try {
-        // Only fetch emails from the earliest pending payment creation time (with 1 minute buffer)
-        let oldestPendingTime = Date.now() - 15 * 60 * 1000;
+        // Fetch emails from the last 20 minutes (or earliest pending payment)
+        let oldestPendingTime = Date.now() - 20 * 60 * 1000;
         for (const p of pendingPayments) {
           const t = new Date(p.created_at).getTime();
           if (t < oldestPendingTime) oldestPendingTime = t;
@@ -325,9 +325,8 @@ class EmailVerificationService {
     }
   }
 
-  private getPendingUpiPayments(timeoutMin: number): Payment[] {
+  private getPendingPayments(timeoutMin: number): Payment[] {
     const listResult = paymentRepo.list({
-      paymentMethod: 'UPI_AUTO',
       status: 'PENDING',
       limit: 100
     });

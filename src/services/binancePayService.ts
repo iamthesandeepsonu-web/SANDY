@@ -383,7 +383,7 @@ export const binancePayService = {
     // If not found in local DB yet, trigger an immediate real-time IMAP check
     if (!deposit) {
       try {
-        await emailVerificationService.checkEmails();
+        await emailVerificationService.checkEmails(true);
         deposit = cryptoDepositRepo.getByOrderId(cleanOrderId);
       } catch {}
     }
@@ -393,7 +393,7 @@ export const binancePayService = {
       if (deposit.is_claimed) {
         return {
           success: false,
-          message: `❌ This Binance Order ID (<code>${cleanOrderId}</code>) was already claimed on our system!`
+          message: `❌ <b>Already Claimed</b>\n\nOrder ID <code>${cleanOrderId}</code> has already been redeemed.`
         };
       }
 
@@ -401,7 +401,7 @@ export const binancePayService = {
       if (deposit.amount_usd < (expectedUsd - 0.005)) {
         return {
           success: false,
-          message: `❌ <b>Underpayment Detected!</b>\n\n💵 <b>Required Price:</b> $${expectedUsd.toFixed(2)} USDT\n💵 <b>Amount Received on Binance:</b> $${deposit.amount_usd.toFixed(2)} USDT\n\n⚠️ You transferred less than the required amount. Order cannot be completed until the exact amount ($${expectedUsd.toFixed(2)} USDT) is transferred.`
+          message: `❌ <b>Underpayment Detected</b>\n\n💵 <b>Required:</b> $${expectedUsd.toFixed(2)} USDT\n💵 <b>Received:</b> $${deposit.amount_usd.toFixed(2)} USDT\n\n⚠️ <i>Please transfer the remaining amount to complete this order.</i>`
         };
       }
 
@@ -451,7 +451,7 @@ export const binancePayService = {
       if (actualPaidUsd < (expectedUsd - 0.005)) {
         return {
           success: false,
-          message: `❌ <b>Underpayment Detected!</b>\n\n💵 <b>Required Price:</b> $${expectedUsd.toFixed(2)} USDT\n💵 <b>Amount Received on Binance:</b> $${actualPaidUsd.toFixed(2)} USDT\n\n⚠️ You paid less than the required amount. Order cannot be completed until the exact amount ($${expectedUsd.toFixed(2)} USDT) is transferred.`
+          message: `❌ <b>Underpayment Detected</b>\n\n💵 <b>Required:</b> $${expectedUsd.toFixed(2)} USDT\n💵 <b>Received:</b> $${actualPaidUsd.toFixed(2)} USDT\n\n⚠️ <i>Please transfer the remaining amount to complete this order.</i>`
         };
       }
 
@@ -492,7 +492,7 @@ export const binancePayService = {
     // 4. If transaction was not found on Binance (Fake/Invalid ID or unconfirmed)
     return {
       success: false,
-      message: `❌ <b>Payment Record Not Found on Binance</b>\n\nNo deposit record was found for Order ID <code>${cleanOrderId}</code>.\n\n📌 <b>To complete your payment:</b>\n1️⃣ Ensure you transferred exact <b>$${expectedUsd.toFixed(2)} USDT</b> to Binance Pay ID <code>${cfg.merchantId || '433230697'}</code>.\n2️⃣ Copy the exact <b>Order ID / TxID</b> from your Binance Pay receipt.\n3️⃣ If you just transferred, please wait 30 seconds and click <b>Enter Binance Order ID</b> again.`
+      message: `❌ <b>Binance Payment Not Found</b>\n\nOrder ID <code>${cleanOrderId}</code> was not found on Binance.\n\n💡 <i>If you just paid on Binance, please wait 15–30 seconds for confirmation and click <b>Enter Binance Order ID</b> again.</i>`
     };
   }
 };
