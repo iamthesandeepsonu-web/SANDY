@@ -19,6 +19,39 @@ export interface BinanceVerificationResult {
   binanceOrderId?: string;
 }
 
+export function extractOrderTokens(rawInput: string): string[] {
+  if (!rawInput) return [];
+  const tokens = new Set<string>();
+  const trimmed = rawInput.trim();
+
+  // 1. Direct alphanumeric token
+  const cleanDirect = trimmed.replace(/[^a-zA-Z0-9_-]/g, '');
+  if (cleanDirect.length >= 3) tokens.add(cleanDirect);
+
+  // 2. Extract continuous numeric strings (e.g. 454811915688992768, 2481928374921)
+  const numbers = trimmed.match(/\d{4,32}/g);
+  if (numbers) {
+    for (const num of numbers) tokens.add(num);
+  }
+
+  // 3. Strip common prefixes like 'Order ID:', 'TxID:', 'Txn ID:'
+  const stripped = trimmed
+    .replace(/^(order\s*id\s*[:\-\s]*|tx\s*id\s*[:\-\s]*|txn\s*id\s*[:\-\s]*|transaction\s*id\s*[:\-\s]*|ref\s*[:\-\s]*|id\s*[:\-\s]*)/i, '')
+    .trim()
+    .replace(/[^a-zA-Z0-9_-]/g, '');
+  if (stripped.length >= 3) tokens.add(stripped);
+
+  // 4. Add versions without 'p_' or 'P_'
+  for (const t of Array.from(tokens)) {
+    if (t.toLowerCase().startsWith('p_')) {
+      const withoutP = t.substring(2);
+      if (withoutP.length >= 3) tokens.add(withoutP);
+    }
+  }
+
+  return Array.from(tokens);
+}
+
 export const binanceVerificationService = {
   /**
    * Verify and claim a Binance payment using Order ID / Transaction ID
@@ -28,14 +61,13 @@ export const binanceVerificationService = {
     rawOrderId: string,
     _optionalUserId?: string
   ): Promise<BinanceVerificationResult> {
-    const cleanOrderId = rawOrderId.trim().replace(/[^a-zA-Z0-9_-]/g, '');
-    const cleanLower = cleanOrderId.toLowerCase();
-    const cleanNoPrefix = cleanLower.replace(/^p_/, '');
+    const candidateTokens = extractOrderTokens(rawOrderId);
+    const primaryOrderId = candidateTokens[0] || rawOrderId.trim();
 
-    if (!cleanOrderId || cleanOrderId.length < 4) {
+    if (!primaryOrderId || primaryOrderId.length < 3) {
       return {
         success: false,
-        message: `❌ <b>Binance Payment Not Found</b>\n\nOrder ID <code>${cleanOrderId || 'N/A'}</code> was not found on Binance.\n\n💡 <i>Please verify your Order ID and try again in 15–30 seconds.</i>`
+        message: `❌ <b>Binance Payment Not Found</b>\n\nOrder ID <code>${rawOrderId || 'N/A'}</code> is invalid.\n\n💡 <i>Please check your Binance Pay receipt and enter the numeric Order ID or TxID.</i>`
       };
     }
 
@@ -48,21 +80,23 @@ export const binanceVerificationService = {
       return { success: false, message: '✅ This payment has already been verified and completed.' };
     }
 
-    // 1. Anti-fraud duplicate check across completed payments
-    if (paymentRepo.isExternalTxIdUsed(cleanOrderId) || paymentRepo.isExternalTxIdUsed(cleanNoPrefix)) {
-      auditRepo.logBinanceEvent({
-        paymentId: payment.id,
-        referenceId: payment.reference_id,
-        binanceOrderId: cleanOrderId,
-        eventType: 'FAILED',
-        status: 'DUPLICATE_CLAIM_ATTEMPT',
-        details: `Order ID ${cleanOrderId} already redeemed by another payment`
-      });
+    // 1. Anti-fraud duplicate check across candidate tokens
+    for (const token of candidateTokens) {
+      if (paymentRepo.isExternalTxIdUsed(token) || paymentRepo.isExternalTxIdUsed('p_' + token)) {
+        auditRepo.logBinanceEvent({
+          paymentId: payment.id,
+          referenceId: payment.reference_id,
+          binanceOrderId: token,
+          eventType: 'FAILED',
+          status: 'DUPLICATE_CLAIM_ATTEMPT',
+          details: `Order ID ${token} already redeemed by another payment`
+        });
 
-      return {
-        success: false,
-        message: `❌ <b>Already Claimed</b>\n\nOrder ID <code>${cleanOrderId}</code> has already been redeemed.`
-      };
+        return {
+          success: false,
+          message: `❌ <b>Already Claimed</b>\n\nOrder ID <code>${token}</code> has already been redeemed.`
+        };
+      }
     }
 
     let meta: any = {};
@@ -79,45 +113,75 @@ export const binanceVerificationService = {
     auditRepo.logBinanceEvent({
       paymentId: payment.id,
       referenceId: payment.reference_id,
-      binanceOrderId: cleanOrderId,
+      binanceOrderId: primaryOrderId,
       eventType: 'VERIFICATION_ATTEMPT',
       amountUsd: expectedUsd,
       amountInr: payment.amount,
       status: 'VERIFYING',
-      details: `User submitted Order ID ${cleanOrderId} for payment ${payment.id}`
+      details: `User submitted Order ID ${primaryOrderId} (tokens: ${candidateTokens.join(', ')}) for payment ${payment.id}`
     });
 
     // 2. Query Live Binance Transactions (SAPI + OpenAPI fallback)
     let matchedTxn: BinancePayTransaction | null = null;
+    let liveTxns: BinancePayTransaction[] = [];
 
     try {
-      const liveTxns = await binanceApiService.fetchPayTransactions(undefined, { limit: 50 });
+      liveTxns = await binanceApiService.fetchPayTransactions(undefined, { limit: 100 });
+      
       matchedTxn = liveTxns.find(t => {
         const tOrder = (t.orderId || '').toLowerCase().trim();
         const tTxn = (t.transactionId || '').toLowerCase().trim();
         const tTxnNoP = tTxn.replace(/^p_/, '');
 
-        return (
-          tOrder === cleanLower ||
-          tTxn === cleanLower ||
-          tTxnNoP === cleanNoPrefix ||
-          tTxn === ('p_' + cleanLower) ||
-          (cleanLower.length >= 7 && (tOrder.includes(cleanLower) || tTxn.includes(cleanLower))) ||
-          (cleanNoPrefix.length >= 7 && (tTxnNoP.includes(cleanNoPrefix) || tOrder.includes(cleanNoPrefix)))
-        );
+        for (const tok of candidateTokens) {
+          const tokLower = tok.toLowerCase().trim();
+          const tokNoP = tokLower.replace(/^p_/, '');
+
+          if (
+            tOrder === tokLower ||
+            tTxn === tokLower ||
+            tTxnNoP === tokNoP ||
+            tOrder === tokNoP ||
+            tTxn === ('p_' + tokNoP) ||
+            (tokNoP.length >= 6 && (tOrder.includes(tokNoP) || tTxn.includes(tokNoP))) ||
+            (tOrder.length >= 6 && tokNoP.includes(tOrder))
+          ) {
+            return true;
+          }
+        }
+        return false;
       }) || null;
     } catch (e: any) {
-      console.warn('Binance SAPI query error during verification:', e.message);
+      console.warn('Binance SAPI query notice during verification:', e.message);
     }
 
-    // Fallback: Check OpenAPI order query if SAPI didn't return
+    // Fallback 1: Check OpenAPI order query for all candidate tokens
     if (!matchedTxn) {
+      for (const tok of candidateTokens) {
+        try {
+          const openApiOrder = await binanceApiService.queryOpenApiOrder(tok);
+          if (openApiOrder && (openApiOrder.status === 'PAID' || openApiOrder.status === 'SUCCESS')) {
+            matchedTxn = {
+              orderId: openApiOrder.merchantTradeNo || tok,
+              transactionId: openApiOrder.transactionId || tok,
+              amount: openApiOrder.orderAmount,
+              currency: openApiOrder.currency || 'USDT',
+              transactionTime: openApiOrder.createTime || Date.now()
+            };
+            break;
+          }
+        } catch {}
+      }
+    }
+
+    // Fallback 2: Check by reference ID via OpenAPI
+    if (!matchedTxn && payment.reference_id) {
       try {
-        const openApiOrder = await binanceApiService.queryOpenApiOrder(cleanOrderId);
+        const openApiOrder = await binanceApiService.queryOpenApiOrder(payment.reference_id);
         if (openApiOrder && (openApiOrder.status === 'PAID' || openApiOrder.status === 'SUCCESS')) {
           matchedTxn = {
-            orderId: openApiOrder.merchantTradeNo || cleanOrderId,
-            transactionId: openApiOrder.transactionId || cleanOrderId,
+            orderId: openApiOrder.merchantTradeNo || payment.reference_id,
+            transactionId: openApiOrder.transactionId || payment.reference_id,
             amount: openApiOrder.orderAmount,
             currency: openApiOrder.currency || 'USDT',
             transactionTime: openApiOrder.createTime || Date.now()
@@ -126,20 +190,35 @@ export const binanceVerificationService = {
       } catch {}
     }
 
+    // Fallback 3: Single matching recent transaction of exact amount in last 30 minutes
+    if (!matchedTxn && liveTxns.length > 0 && expectedUsd > 0) {
+      const now = Date.now();
+      const recentUnclaimed = liveTxns.filter(t => {
+        const isRecent = !t.transactionTime || (now - t.transactionTime < 30 * 60 * 1000);
+        const amountMatch = Math.abs(t.amount - expectedUsd) <= 0.015;
+        const alreadyClaimed = paymentRepo.isExternalTxIdUsed(t.orderId) || paymentRepo.isExternalTxIdUsed(t.transactionId);
+        return isRecent && amountMatch && !alreadyClaimed;
+      });
+
+      if (recentUnclaimed.length === 1) {
+        matchedTxn = recentUnclaimed[0];
+      }
+    }
+
     // 3. Process verification result
     if (!matchedTxn) {
       auditRepo.logBinanceEvent({
         paymentId: payment.id,
         referenceId: payment.reference_id,
-        binanceOrderId: cleanOrderId,
+        binanceOrderId: primaryOrderId,
         eventType: 'FAILED',
         status: 'PAYMENT_NOT_FOUND',
-        details: `Order ID ${cleanOrderId} not found in recent Binance transactions`
+        details: `Order ID ${primaryOrderId} not found in recent Binance transactions`
       });
 
       return {
         success: false,
-        message: `❌ <b>Binance Payment Not Found</b>\n\nOrder ID <code>${cleanOrderId}</code> was not found on Binance.\n\n💡 <i>If you just paid on Binance, please wait 15–30 seconds for confirmation and click <b>Enter Binance Order ID</b> again.</i>`
+        message: `❌ <b>Binance Payment Not Found</b>\n\nOrder ID <code>${primaryOrderId}</code> was not found on Binance.\n\n💡 <i>If you just paid on Binance, please wait 15–30 seconds for confirmation and click <b>Enter Binance Order ID</b> again.</i>`
       };
     }
 
@@ -151,7 +230,7 @@ export const binanceVerificationService = {
       auditRepo.logBinanceEvent({
         paymentId: payment.id,
         referenceId: payment.reference_id,
-        binanceOrderId: cleanOrderId,
+        binanceOrderId: primaryOrderId,
         eventType: 'FAILED',
         amountUsd: matchedTxn.amount,
         status: 'UNDERPAID',
@@ -160,7 +239,7 @@ export const binanceVerificationService = {
 
       return {
         success: false,
-        message: `❌ <b>Binance Payment Not Found</b>\n\nOrder ID <code>${cleanOrderId}</code> was not found on Binance.\n\n💡 <i>If you just paid on Binance, please wait 15–30 seconds for confirmation and click <b>Enter Binance Order ID</b> again.</i>`
+        message: `❌ <b>Underpaid Binance Payment</b>\n\nReceived: $${matchedTxn.amount.toFixed(2)} USDT\nRequired: $${expectedUsd.toFixed(2)} USDT\n\n💡 <i>Please contact support if you need assistance.</i>`
       };
     }
 
@@ -171,7 +250,7 @@ export const binanceVerificationService = {
       };
     }
 
-    const canonicalOrderId = matchedTxn.orderId || matchedTxn.transactionId || cleanOrderId;
+    const canonicalOrderId = matchedTxn.orderId || matchedTxn.transactionId || primaryOrderId;
 
     // 5. ATOMIC COMPLETION & FULFILLMENT
     return await runTransaction(async () => {

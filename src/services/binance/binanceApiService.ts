@@ -28,6 +28,7 @@ export interface BinanceOpenApiOrderResult {
 
 const SAPI_BASE_URLS = [
   'https://api.binance.com',
+  'https://api-gcp.binance.com',
   'https://api1.binance.com',
   'https://api2.binance.com',
   'https://api3.binance.com',
@@ -41,6 +42,9 @@ const TIME_API_URLS = [
   'https://api2.binance.com/api/v3/time',
   'https://api3.binance.com/api/v3/time'
 ];
+
+let cachedTimeOffset = 0;
+let lastTimeSync = 0;
 
 export const binanceApiService = {
   OPENAPI_BASE_URL: 'https://bpay.binanceapi.com',
@@ -65,8 +69,11 @@ export const binanceApiService = {
       try {
         const res = await axios.get(url, { timeout: 5000 });
         if (res.data?.serverTime) {
+          const serverTime = Number(res.data.serverTime);
+          cachedTimeOffset = serverTime - Date.now();
+          lastTimeSync = Date.now();
           return {
-            serverTime: Number(res.data.serverTime),
+            serverTime,
             latencyMs: Date.now() - start
           };
         }
@@ -76,9 +83,18 @@ export const binanceApiService = {
     }
 
     return {
-      serverTime: Date.now(),
+      serverTime: Date.now() + cachedTimeOffset,
       latencyMs: Date.now() - start
     };
+  },
+
+  async getSynchronizedTimestamp(): Promise<number> {
+    if (Date.now() - lastTimeSync > 300000) { // Sync every 5 minutes
+      try {
+        await this.getServerTime();
+      } catch {}
+    }
+    return Date.now() + cachedTimeOffset;
   },
 
   async fetchPayTransactions(
@@ -90,9 +106,9 @@ export const binanceApiService = {
       return [];
     }
 
-    const timestamp = Date.now();
+    const timestamp = await this.getSynchronizedTimestamp();
     const limit = options.limit || 100;
-    let qs = `timestamp=${timestamp}&limit=${limit}`;
+    let qs = `timestamp=${timestamp}&recvWindow=60000&limit=${limit}`;
     if (options.startTimestamp) qs += `&startTimestamp=${options.startTimestamp}`;
     if (options.endTimestamp) qs += `&endTimestamp=${options.endTimestamp}`;
 
@@ -169,7 +185,7 @@ export const binanceApiService = {
     }
 
     if (lastErrorMsg) {
-      throw new Error(`Binance API Error (${lastErrorMsg})`);
+      console.warn(`Binance fetchPayTransactions notice: ${lastErrorMsg}`);
     }
     return [];
   },

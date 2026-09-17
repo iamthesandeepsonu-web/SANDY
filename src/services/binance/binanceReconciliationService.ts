@@ -77,7 +77,7 @@ export const binanceReconciliationService = {
         };
       }
 
-      // Check OpenAPI query for reference ID
+      // Fallback: Check OpenAPI query for reference ID
       const openApiOrder = await binanceApiService.queryOpenApiOrder(refId);
       if (openApiOrder && (openApiOrder.status === 'PAID' || openApiOrder.status === 'SUCCESS')) {
         const verifyRes = await binanceVerificationService.verifyAndClaimPayment(
@@ -93,6 +93,35 @@ export const binanceReconciliationService = {
           isPaid: verifyRes.success,
           payment: updated
         };
+      }
+
+      // Fallback 2: Check for unique recent unclaimed transaction of exact expected amount
+      if (liveTxns.length > 0 && expectedUsd > 0) {
+        const now = Date.now();
+        const recentMatching = liveTxns.filter(t => {
+          const isRecent = !t.transactionTime || (now - t.transactionTime < 30 * 60 * 1000);
+          const amountMatch = Math.abs(t.amount - expectedUsd) <= 0.015;
+          const alreadyClaimed = paymentRepo.isExternalTxIdUsed(t.orderId) || paymentRepo.isExternalTxIdUsed(t.transactionId);
+          return isRecent && amountMatch && !alreadyClaimed;
+        });
+
+        if (recentMatching.length === 1) {
+          const verifyRes = await binanceVerificationService.verifyAndClaimPayment(
+            payment.id,
+            recentMatching[0].orderId || recentMatching[0].transactionId,
+            String(payment.telegram_id)
+          );
+
+          if (verifyRes.success) {
+            const updated = paymentRepo.getById(payment.id)!;
+            return {
+              success: true,
+              message: verifyRes.message,
+              isPaid: true,
+              payment: updated
+            };
+          }
+        }
       }
 
       return {

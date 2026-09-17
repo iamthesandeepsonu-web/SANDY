@@ -396,9 +396,53 @@ export async function handleCheckPayment(ctx: Context, paymentId: string) {
     );
   }
 
+  // If Binance Pay and still PENDING, trigger active reconciliation check
+  if (payment.payment_method === 'BINANCE_PAY' && payment.status === 'PENDING') {
+    if (ctx.callbackQuery) {
+      try {
+        await ctx.answerCallbackQuery({ text: '🔍 Checking Binance Pay network...' });
+      } catch {}
+    }
+
+    try {
+      const recRes = await binancePayService.reconcilePayment(paymentId, 'telegram_bot');
+      if (recRes.isPaid && recRes.payment) {
+        const updated = recRes.payment;
+        let meta: any = {};
+        try {
+          meta = typeof updated.metadata === 'string' ? JSON.parse(updated.metadata) : updated.metadata;
+        } catch {}
+
+        if (meta && meta.orderId && meta.licenseKey) {
+          return ctx.reply(
+            `🎉 <b>Payment Verified & Key Delivered!</b>\n\n📦 <b>Order ID:</b> <code>${meta.orderId}</code>\n🎮 <b>Product:</b> ${escapeHtml(meta.productName || 'Product')}\n⏳ <b>Validity:</b> ${escapeHtml(meta.validityName || '')}\n🔢 <b>Binance Txn:</b> <code>${escapeHtml(updated.external_tx_id || '')}</code>\n\n🔑 <b>Your License Key:</b>\n<code>${escapeHtml(meta.licenseKey)}</code>\n\n<i>💡 Tap to copy key.</i>`,
+            {
+              parse_mode: 'HTML',
+              reply_markup: keyboards.mainMenu()
+            }
+          );
+        }
+
+        const balanceFormatted = region.isIndia
+          ? `₹${user ? user.balance.toFixed(2) : ''}`
+          : `$${currencyService.inrToUsd(user?.balance || 0).toFixed(2)} USDT`;
+
+        return ctx.reply(
+          `🎉 <b>Binance Payment Verified & Credited!</b>\n\n💳 <b>Current Wallet Balance:</b> ${balanceFormatted}\n\nUse <b>🛒 Shop Now</b> to purchase digital keys!`,
+          {
+            parse_mode: 'HTML',
+            reply_markup: keyboards.mainMenu()
+          }
+        );
+      }
+    } catch (e: any) {
+      console.warn('Reconcile error on check status:', e.message);
+    }
+  }
+
   if (ctx.callbackQuery) {
     await ctx.answerCallbackQuery({
-      text: '⏱️ Payment is still pending verification.\nIf you have already paid, please allow a few moments.',
+      text: '⏱️ Payment is pending.\nIf you already paid on Binance, tap "🔢 Enter Binance Order ID / Txn ID" below to verify instantly.',
       show_alert: true
     });
   }
